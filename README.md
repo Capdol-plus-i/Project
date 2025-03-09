@@ -5,7 +5,7 @@
 
 <br/>
 
-# 2. Team Members (팀원 및 팀 소개)
+# 2. Team Members (팀원 소개)
 | 정윤상 | 곽호세 | 고광채 | 송유찬 |
 |:------:|:------:|:------:|:------:|
 | <img src="https://github.com/user-attachments/assets/c1c2b1e3-656d-4712-98ab-a15e91efa2da" alt="정윤상" width="150"> | <img src="https://github.com/user-attachments/assets/c7a72fe5-e190-4d8d-9eda-a14a75b92900" alt="곽호세" width="150"> | <img src="https://avatars.githubusercontent.com/u/52623237?v=4" alt="고광채" width="150"> | <img src="https://private-user-images.githubusercontent.com/149657001/420648220-cce9a139-12a0-48e8-987a-5c6a1e56606d.gif?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDE1MDI0MDMsIm5iZiI6MTc0MTUwMjEwMywicGF0aCI6Ii8xNDk2NTcwMDEvNDIwNjQ4MjIwLWNjZTlhMTM5LTEyYTAtNDhlOC05ODdhLTVjNmExZTU2NjA2ZC5naWY_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwMzA5JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDMwOVQwNjM1MDNaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1jNDg5YmY0NjkyMWJlOGE1YzgwYWY3M2U0MzRlODI2OTMxOGMxNDRkZDU5ZDVkYmE3NjJiZDljYzlmMmU5ZTk3JlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.kW7NLs1kQdlxwAQx65rSIKn8xMjrUGSqinuuxLiA63k" alt="송유찬" width="150"> |
@@ -20,11 +20,6 @@
 
 # 4. Technology Stack (기술 스택)
 ## Language
-|  |  |
-|-----------------|-----------------|
-| HTML5    |<img src="https://github.com/user-attachments/assets/2e122e74-a28b-4ce7-aff6-382959216d31" alt="HTML5" width="100">| 
-| CSS3    |   <img src="https://github.com/user-attachments/assets/c531b03d-55a3-40bf-9195-9ff8c4688f13" alt="CSS3" width="100">|
-| Javascript    |  <img src="https://github.com/user-attachments/assets/4a7d7074-8c71-48b4-8652-7431477669d1" alt="Javascript" width="100"> | 
 
 <br/>
 
@@ -39,15 +34,13 @@
 
 # 6. Development Workflow (개발 워크플로우)
 ## 브랜치 전략 (Branch Strategy)
-우리의 브랜치 전략은 Git Flow를 기반으로 하며, 다음과 같은 브랜치를 사용합니다.
+Git Flow를 기반으로 하며, 다음과 같은 브랜치를 사용합니다.
 
 - Main Branch
-  - 배포 가능한 상태의 코드를 유지합니다.
-  - 모든 배포는 이 브랜치에서 이루어집니다.
+  - 배포 가능한 상태의 코드를 유지
   
 - {name} Branch
-  - 팀원 각자의 개발 브랜치입니다.
-  - 모든 기능 개발은 이 브랜치에서 이루어집니다.
+  - 팀원 각자의 개발 브랜치
+  - 모든 기능 개발은 이 브랜치에서 이루어짐
 
-<br/>
 <br/>
