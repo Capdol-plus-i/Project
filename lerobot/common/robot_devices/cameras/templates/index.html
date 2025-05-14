@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Camera Stream</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #333;
+        }
+        .video-container {
+            margin: 20px auto;
+            max-width: 800px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            background-color: #fff;
+        }
+        img {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .controls {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>USB Camera Stream</h1>
+    <div class="video-container">
+        <img src="{{ url_for('video_feed') }}" alt="Camera Stream">
+    </div>
+    <div class="controls">
+        <p>Streaming camera ID: 0</p>
+    </div>
+</body>
+</html>
