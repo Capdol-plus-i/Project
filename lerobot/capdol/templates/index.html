@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>듀얼 카메라 손 추적</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .camera-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        .camera-feed {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+            background-color: #000;
+            width: 640px;
+            height: 480px;
+        }
+        .camera-feed img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button.primary {
+            background-color: #4CAF50;
+            color: white;
+        }
+        button.secondary {
+            background-color: #f44336;
+            color: white;
+        }
+        button.neutral {
+            background-color: #2196F3;
+            color: white;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        .status {
+            background-color: white;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status h2 {
+            margin-top: 0;
+            color: #333;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .status-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .status-label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .status-value {
+            background-color: #f1f1f1;
+            padding: 8px;
+            border-radius: 3px;
+        }
+        .recording-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .recording-on {
+            background-color: #f44336;
+            animation: blink 1s infinite;
+        }
+        .recording-off {
+            background-color: #aaa;
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>듀얼 카메라 손 추적 시스템</h1>
+        
+        <div class="status">
+            <h2>상태 정보</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="status-label">녹화 상태:</div>
+                    <div class="status-value">
+                        <span class="recording-indicator" id="recordingIndicator"></span>
+                        <span id="recordingStatus">연결 중...</span>
+                    </div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">샘플 수:</div>
+                    <div class="status-value" id="samplesCount">0</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">카메라 1 손 감지:</div>
+                    <div class="status-value" id="cam1HandDetected">아니요</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">카메라 2 손 감지:</div>
+                    <div class="status-value" id="cam2HandDetected">아니요</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">카메라 1 손 좌표:</div>
+                    <div class="status-value" id="cam1Coords">없음</div>
+                </div>
+                <div class="status-item">
+                    <div class="status-label">카메라 2 손 좌표:</div>
+                    <div class="status-value" id="cam2Coords">없음</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="startRecordingBtn" class="primary" disabled>녹화 시작</button>
+            <button id="stopRecordingBtn" class="secondary" disabled>녹화 중지</button>
+            <button id="takeSnapshotBtn" class="neutral" disabled>스냅샷 촬영</button>
+        </div>
+        
+        <div class="camera-container">
+            <div class="camera-feed">
+                <img id="camera1" src="{{ url_for('video_feed1') }}" alt="카메라 1">
+            </div>
+            <div class="camera-feed">
+                <img id="camera2" src="{{ url_for('video_feed2') }}" alt="카메라 2">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 버튼 요소
+        const startRecordingBtn = document.getElementById('startRecordingBtn');
+        const stopRecordingBtn = document.getElementById('stopRecordingBtn');
+        const takeSnapshotBtn = document.getElementById('takeSnapshotBtn');
+        
+        // 상태 표시 요소
+        const recordingIndicator = document.getElementById('recordingIndicator');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const samplesCount = document.getElementById('samplesCount');
+        const cam1HandDetected = document.getElementById('cam1HandDetected');
+        const cam2HandDetected = document.getElementById('cam2HandDetected');
+        const cam1Coords = document.getElementById('cam1Coords');
+        const cam2Coords = document.getElementById('cam2Coords');
+
+        // 카메라 요소
+        const camera1 = document.getElementById('camera1');
+        const camera2 = document.getElementById('camera2');
+        
+        // 시스템 상태 확인 (주기적으로)
+        function updateStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    // 버튼 활성화
+                    if (data.running) {
+                        startRecordingBtn.disabled = data.recording;
+                        stopRecordingBtn.disabled = !data.recording;
+                        takeSnapshotBtn.disabled = data.recording;
+                    } else {
+                        startRecordingBtn.disabled = true;
+                        stopRecordingBtn.disabled = true;
+                        takeSnapshotBtn.disabled = true;
+                    }
+                    
+                    // 녹화 상태 업데이트
+                    recordingIndicator.className = data.recording ? 'recording-indicator recording-on' : 'recording-indicator recording-off';
+                    recordingStatus.textContent = data.recording ? '녹화 중' : '대기 중';
+                    
+                    // 샘플 수 업데이트
+                    samplesCount.textContent = data.samples;
+                    
+                    // 손 감지 상태 업데이트
+                    cam1HandDetected.textContent = data.cam1_hand_detected ? '예' : '아니요';
+                    cam2HandDetected.textContent = data.cam2_hand_detected ? '예' : '아니요';
+                    
+                    // 손 좌표 업데이트
+                    if (data.cam1_hand_detected && data.cam1_tip_coords.x !== null) {
+                        cam1Coords.textContent = `X: ${data.cam1_tip_coords.x}, Y: ${data.cam1_tip_coords.y}`;
+                    } else {
+                        cam1Coords.textContent = '없음';
+                    }
+                    
+                    if (data.cam2_hand_detected && data.cam2_tip_coords.x !== null) {
+                        cam2Coords.textContent = `X: ${data.cam2_tip_coords.x}, Y: ${data.cam2_tip_coords.y}`;
+                    } else {
+                        cam2Coords.textContent = '없음';
+                    }
+                })
+                .catch(error => {
+                    console.error('상태 업데이트 오류:', error);
+                });
+        }
+        
+        // 녹화 시작
+        startRecordingBtn.addEventListener('click', () => {
+            fetch('/start_recording', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateStatus();
+                } else {
+                    alert('녹화 시작 실패');
+                }
+            })
+            .catch(error => {
+                console.error('녹화 시작 오류:', error);
+                alert('녹화 시작 중 오류가 발생했습니다.');
+            });
+        });
+        
+        // 녹화 중지
+        stopRecordingBtn.addEventListener('click', () => {
+            fetch('/stop_recording', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateStatus();
+                } else {
+                    alert('녹화 중지 실패');
+                }
+            })
+            .catch(error => {
+                console.error('녹화 중지 오류:', error);
+                alert('녹화 중지 중 오류가 발생했습니다.');
+            });
+        });
+        
+        // 스냅샷 촬영
+        takeSnapshotBtn.addEventListener('click', () => {
+            fetch('/take_snapshot', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('스냅샷이 성공적으로 저장되었습니다.');
+                } else {
+                    alert('스냅샷 촬영 실패');
+                }
+            })
+            .catch(error => {
+                console.error('스냅샷 촬영 오류:', error);
+                alert('스냅샷 촬영 중 오류가 발생했습니다.');
+            });
+        });
+        
+        // 카메라 에러 처리
+        camera1.onerror = () => {
+            camera1.src = '/static/camera_off.png';
+        };
+        
+        camera2.onerror = () => {
+            camera2.src = '/static/camera_off.png';
+        };
+        
+        // 페이지 로드 시 최초 상태 업데이트
+        updateStatus();
+        
+        // 주기적 상태 업데이트 (1초마다)
+        setInterval(updateStatus, 1000);
+    </script>
+</body>
+</html>

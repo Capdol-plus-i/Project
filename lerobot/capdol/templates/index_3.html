@@ -1,0 +1,299 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>로봇 암 및 손 좌표 데이터 수집</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            color: #333;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+        .video-container {
+            margin: 0 auto;
+            text-align: center;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .video-feed {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        button.recording {
+            background-color: #e74c3c;
+        }
+        button.recording:hover {
+            background-color: #c0392b;
+        }
+        .status-panel {
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .status-item {
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .status-value {
+            font-weight: bold;
+        }
+        .status-value.active {
+            color: #27ae60;
+        }
+        .status-value.inactive {
+            color: #e74c3c;
+        }
+        .instructions {
+            background-color: #fffbeb;
+            border: 1px solid #ffeeba;
+            border-radius: 4px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .instructions ul {
+            margin-bottom: 0;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>로봇 암 및 손 좌표 데이터 수집</h1>
+        
+        <div class="video-container">
+            <img src="{{ url_for('video_feed') }}" class="video-feed" alt="Camera Feed">
+        </div>
+        
+        <div class="controls">
+            <button id="recordBtn">녹화 시작</button>
+            <button id="snapshotBtn">스냅샷 촬영</button>
+        </div>
+        
+        <div class="status-panel">
+            <h3>상태 정보</h3>
+            <div class="status-item">
+                <span>녹화 상태:</span>
+                <span id="recordingStatus" class="status-value inactive">대기 중</span>
+            </div>
+            <div class="status-item">
+                <span>캘리브레이션:</span>
+                <span id="calibrationStatus" class="status-value inactive">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span>샘플 수:</span>
+                <span id="sampleCount" class="status-value">0</span>
+            </div>
+            <div class="status-item">
+                <span>손 감지:</span>
+                <span id="handDetectionStatus" class="status-value inactive">감지 안됨</span>
+            </div>
+            <div class="status-item">
+                <span>검지 끝 좌표:</span>
+                <span id="tipCoordinates" class="status-value">-</span>
+            </div>
+        </div>
+        
+        <div class="instructions">
+            <h3>사용 방법</h3>
+            <ul>
+                <li>leader arm을 직접 움직여 데이터 수집을 시작하세요. follower arm이 자동으로 따라갑니다.</li>
+                <li><strong>녹화 시작</strong> 버튼을 누르면 연속적으로 데이터가 기록됩니다.</li>
+                <li><strong>스냅샷 촬영</strong> 버튼을 누르면 현재 프레임의 데이터만 기록됩니다.</li>
+                <li>카메라가 손의 검지 끝 부분을 감지할 수 있도록 위치시키세요.</li>
+                <li>녹화된 데이터는 CSV 파일로 저장됩니다.</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // DOM 요소
+        const recordBtn = document.getElementById('recordBtn');
+        const snapshotBtn = document.getElementById('snapshotBtn');
+        const recordingStatus = document.getElementById('recordingStatus');
+        const calibrationStatus = document.getElementById('calibrationStatus');
+        const sampleCount = document.getElementById('sampleCount');
+        const handDetectionStatus = document.getElementById('handDetectionStatus');
+        const tipCoordinates = document.getElementById('tipCoordinates');
+        
+        // 상태 변수
+        let isRecording = false;
+        
+        // 녹화 버튼 클릭 이벤트
+        recordBtn.addEventListener('click', async () => {
+            try {
+                if (!isRecording) {
+                    // 녹화 시작
+                    const response = await fetch('/start_recording', {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        isRecording = true;
+                        recordBtn.textContent = '녹화 중지';
+                        recordBtn.classList.add('recording');
+                        recordingStatus.textContent = '녹화 중';
+                        recordingStatus.classList.remove('inactive');
+                        recordingStatus.classList.add('active');
+                        snapshotBtn.disabled = true;
+                    } else {
+                        alert('녹화 시작 실패');
+                    }
+                } else {
+                    // 녹화 중지
+                    const response = await fetch('/stop_recording', {
+                        method: 'POST'
+                    });
+                    
+                    if (response.ok) {
+                        isRecording = false;
+                        recordBtn.textContent = '녹화 시작';
+                        recordBtn.classList.remove('recording');
+                        recordingStatus.textContent = '대기 중';
+                        recordingStatus.classList.remove('active');
+                        recordingStatus.classList.add('inactive');
+                        snapshotBtn.disabled = false;
+                    } else {
+                        alert('녹화 중지 실패');
+                    }
+                }
+            } catch (error) {
+                console.error('녹화 제어 오류:', error);
+                alert('녹화 제어 중 오류가 발생했습니다.');
+            }
+        });
+        
+        // 스냅샷 버튼 클릭 이벤트
+        snapshotBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/take_snapshot', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    alert('스냅샷이 촬영되었습니다.');
+                } else {
+                    alert('스냅샷 촬영 실패');
+                }
+            } catch (error) {
+                console.error('스냅샷 촬영 오류:', error);
+                alert('스냅샷 촬영 중 오류가 발생했습니다.');
+            }
+        });
+        
+        // 주기적으로 상태 업데이트
+        async function updateStatus() {
+            try {
+                const response = await fetch('/status');
+                const data = await response.json();
+                
+                if (data.running) {
+                    // 녹화 상태 업데이트
+                    if (data.recording !== isRecording) {
+                        isRecording = data.recording;
+                        
+                        if (isRecording) {
+                            recordBtn.textContent = '녹화 중지';
+                            recordBtn.classList.add('recording');
+                            recordingStatus.textContent = '녹화 중';
+                            recordingStatus.classList.remove('inactive');
+                            recordingStatus.classList.add('active');
+                            snapshotBtn.disabled = true;
+                        } else {
+                            recordBtn.textContent = '녹화 시작';
+                            recordBtn.classList.remove('recording');
+                            recordingStatus.textContent = '대기 중';
+                            recordingStatus.classList.remove('active');
+                            recordingStatus.classList.add('inactive');
+                            snapshotBtn.disabled = false;
+                        }
+                    }
+                    
+                    // 캘리브레이션 상태 업데이트
+                    calibrationStatus.textContent = data.calibrated ? '완료' : '미완료';
+                    calibrationStatus.classList.remove(data.calibrated ? 'inactive' : 'active');
+                    calibrationStatus.classList.add(data.calibrated ? 'active' : 'inactive');
+                    
+                    // 샘플 수 업데이트
+                    sampleCount.textContent = data.samples;
+                    
+                    // 손 감지 상태 업데이트
+                    handDetectionStatus.textContent = data.hand_detected ? '감지됨' : '감지 안됨';
+                    handDetectionStatus.classList.remove(data.hand_detected ? 'inactive' : 'active');
+                    handDetectionStatus.classList.add(data.hand_detected ? 'active' : 'inactive');
+                    
+                    // 검지 끝 좌표 업데이트
+                    if (data.hand_detected && data.tip_coords.x !== null && data.tip_coords.y !== null) {
+                        tipCoordinates.textContent = `x: ${data.tip_coords.x}, y: ${data.tip_coords.y}`;
+                    } else {
+                        tipCoordinates.textContent = '-';
+                    }
+                } else {
+                    // 실행 중이 아닌 경우
+                    recordBtn.disabled = true;
+                    snapshotBtn.disabled = true;
+                    recordingStatus.textContent = '시스템 미실행';
+                    calibrationStatus.textContent = '시스템 미실행';
+                    handDetectionStatus.textContent = '시스템 미실행';
+                    tipCoordinates.textContent = '-';
+                }
+            } catch (error) {
+                console.error('상태 업데이트 오류:', error);
+            }
+            
+            // 1초마다 상태 업데이트
+            setTimeout(updateStatus, 1000);
+        }
+        
+        // 초기 상태 업데이트 시작
+        updateStatus();
+    </script>
+</body>
+</html>
