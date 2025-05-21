@@ -6,6 +6,8 @@ import time
 import cv2
 import threading
 import mediapipe as mp
+import os
+import json
 from lerobot.common.robot_devices.robots.configs import KochRobotConfig
 from lerobot.common.robot_devices.motors.utils import make_motors_buses_from_configs
 
@@ -17,12 +19,16 @@ logger = logging.getLogger(__name__)
 mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 
+# 캘리브레이션 디렉토리 설정
+CALIBRATION_DIR = "lerobot/capdol/calibration_data"
+
 class ManipulatorRobot:
     def __init__(self, config):
         self.config = config
         self.leader_arms = make_motors_buses_from_configs(config.leader_arms)
         self.follower_arms = make_motors_buses_from_configs(config.follower_arms)
         self.is_connected = False
+        self.calibration_loaded = False
 
     def connect(self):
         if self.is_connected:
@@ -30,26 +36,79 @@ class ManipulatorRobot:
         
         # Import here to avoid dependency issues
         from lerobot.common.robot_devices.motors.dynamixel import TorqueMode
+        self.TorqueMode = TorqueMode
         
-        # Connect and configure all arms with a single loop
+        # Connect all arms
         for arm_type, arms in [("follower", self.follower_arms), ("leader", self.leader_arms)]:
             for name in arms:
                 logger.info(f"Connecting {name} {arm_type} arm")
                 arms[name].connect()
-                
-        # Configure all motors
+        
+        self.is_connected = True
+        logger.info("Robot connected successfully")
+        
+        # 캘리브레이션 로드 및 적용
+        self.load_calibration()
+        
+        # Configure all motors after calibration is applied
         for arms in [self.follower_arms, self.leader_arms]:
             for name in arms:
                 # Disable torque, set extended position mode, re-enable torque
-                arms[name].write("Torque_Enable", TorqueMode.DISABLED.value)
-                arms[name].write("Operating_Mode", 3)  # Position Control Mode
+                arms[name].write("Torque_Enable", self.TorqueMode.DISABLED.value)
+                arms[name].write("Operating_Mode", 3)  # Extended Position Control Mode
                 arms[name].write("Torque_Enable", 1)
 
-        self.is_connected = True
-        logger.info("Robot connected successfully")
+    def load_calibration(self):
+        """캘리브레이션 파일을 로드하고 로봇 팔에 적용"""
+        logger.info("Loading calibration data...")
+        
+        # 캘리브레이션 파일 경로
+        leader_calib_path = os.path.join(CALIBRATION_DIR, "leader_arm.json")
+        follower_calib_path = os.path.join(CALIBRATION_DIR, "follower_arm.json")
+        
+        # leader arm 캘리브레이션 로드
+        leader_calibration = None
+        if os.path.exists(leader_calib_path):
+            try:
+                with open(leader_calib_path, 'r') as f:
+                    leader_calibration = json.load(f)
+                logger.info(f"Loaded leader arm calibration from {leader_calib_path}")
+            except Exception as e:
+                logger.error(f"Error loading leader arm calibration: {e}")
+        else:
+            logger.warning(f"Leader arm calibration file not found: {leader_calib_path}")
+        
+        # follower arm 캘리브레이션 로드
+        follower_calibration = None
+        if os.path.exists(follower_calib_path):
+            try:
+                with open(follower_calib_path, 'r') as f:
+                    follower_calibration = json.load(f)
+                logger.info(f"Loaded follower arm calibration from {follower_calib_path}")
+            except Exception as e:
+                logger.error(f"Error loading follower arm calibration: {e}")
+        else:
+            logger.warning(f"Follower arm calibration file not found: {follower_calib_path}")
+        
+        # 캘리브레이션 데이터 적용
+        if leader_calibration:
+            for name in self.leader_arms:
+                self.leader_arms[name].set_calibration(leader_calibration)
+                logger.info(f"Applied calibration to leader arm '{name}'")
+        
+        if follower_calibration:
+            for name in self.follower_arms:
+                self.follower_arms[name].set_calibration(follower_calibration)
+                logger.info(f"Applied calibration to follower arm '{name}'")
+        
+        self.calibration_loaded = leader_calibration is not None and follower_calibration is not None
+        
+        if self.calibration_loaded:
+            logger.info("Calibration data loaded and applied successfully")
+        else:
+            logger.warning("Calibration data not fully loaded. Some robot movements may be inaccurate.")
 
     def send_action(self, action, arm_type='follower'):
-        """Send joint position commands to robot arm"""
         if not self.is_connected:
             logger.error("Robot not connected")
             return False
@@ -64,21 +123,14 @@ class ManipulatorRobot:
             goal_pos = action[from_idx:to_idx]
             from_idx = to_idx
             
-            # Get current position
-            present_pos = np.array(arms[name].read("Present_Position"), dtype=np.float32)
-            
             # Convert goal position to numpy array
             if hasattr(goal_pos, 'numpy'):
                 goal_pos = goal_pos.numpy()
             goal_pos = np.array(goal_pos, dtype=np.float32)
             
-            # Safety limits: max change of 150 units
-            safe_goal_pos = present_pos + np.clip(goal_pos - present_pos, -150.0, 150.0)
-            safe_goal_pos = np.round(safe_goal_pos).astype(np.uint32)
-            
             # Send command
             try:
-                arms[name].write("Goal_Position", safe_goal_pos)
+                arms[name].write("Goal_Position", goal_pos)
                 return True
             except Exception as e:
                 logger.error(f"Error sending action: {e}")
@@ -125,7 +177,7 @@ class ManipulatorRobot:
 
 class DualCameraHandRobotController:
     """Controller for hand-based robot manipulation using two cameras"""
-    def __init__(self, robot, model_parameters_path="lerobot/capdol/models/model_parameters_resnet.npz", arm_type='follower'):
+    def __init__(self, robot, model_parameters_path="/lerobot/capdol/models/final_model_20250515_2121.npz", arm_type='follower'):
         self.robot = robot
         self.arm_type = arm_type
         self.camera1_id = 4
@@ -133,6 +185,9 @@ class DualCameraHandRobotController:
         self.width = 640
         self.height = 480
         self.running = False
+        
+        # 미리보기 모드 추가 - 기본적으로 활성화 (모터 전송 없음)
+        self.preview_mode = False
         
         # Camera variables
         self.caps = [None, None]
@@ -142,9 +197,9 @@ class DualCameraHandRobotController:
         
         # Initialize hand tracking models with optimized parameters
         self.hands_models = [
-            mp_hands.Hands(model_complexity=0, min_detection_confidence=0.4, 
+            mp_hands.Hands(model_complexity=0, min_detection_confidence=0.3, 
                          min_tracking_confidence=0.2, max_num_hands=1),
-            mp_hands.Hands(model_complexity=0, min_detection_confidence=0.4, 
+            mp_hands.Hands(model_complexity=0, min_detection_confidence=0.3, 
                          min_tracking_confidence=0.2, max_num_hands=1)
         ]
         
@@ -158,6 +213,7 @@ class DualCameraHandRobotController:
         
         # State variables
         self.predicted_joints = np.zeros(4)
+        # z_value 초기화 추가 - 오류 수정
         self.z_value = 10  # Default z value
     
     def load_model_parameters(self, model_path):
@@ -166,7 +222,7 @@ class DualCameraHandRobotController:
         self.parameters = {k: param_data[k] for k in param_data.files}
     
     def predict_joints(self, x, y, z):
-        """Predict joint positions from hand coordinates"""
+        """Predict joint positions from hand coordinates (각도 단위로 반환)"""
         if self.parameters is None:
             return np.zeros(4)
         
@@ -184,7 +240,7 @@ class DualCameraHandRobotController:
             
         # Output layer (linear)
         W, b = self.parameters[f'W{L}'], self.parameters[f'b{L}']
-        predictions = (W.dot(A) + b) * 400
+        predictions = (W.dot(A) + b) * 360
         
         return predictions.flatten()
     
@@ -291,13 +347,24 @@ class DualCameraHandRobotController:
         x, y = self.tip_coords[0]
         z = self.z_value
         
-        joint_text = f"Joints: [{', '.join([str(int(j)) for j in self.predicted_joints])}]"
-        coord_text = f"Input: X={x}, Y={y}, Z={z}"
+        # 예측 관절 값 (원래 형식) 표시
+        joint_text = f"Joints (raw): [{', '.join([str(int(j)) for j in self.predicted_joints])}]"
         
-        cv2.putText(combined, joint_text, (10, self.height-20), 
+        coord_text = f"Input: X={x}, Y={y}, Z={z}"
+        calibration_text = f"Calibration: {'LOADED' if self.robot.calibration_loaded else 'NOT LOADED'}"
+        preview_text = f"Preview Mode: {'ON (p to toggle)' if self.preview_mode else 'OFF (p to toggle)'}"
+        
+        # 텍스트 위치 조정
+        cv2.putText(combined, joint_text, (10, self.height-120), 
                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-        cv2.putText(combined, coord_text, (10, self.height-40), 
+        cv2.putText(combined, coord_text, (10, self.height-60), 
                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
+        cv2.putText(combined, calibration_text, (10, self.height-40), 
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                  (0, 255, 0) if self.robot.calibration_loaded else (0, 0, 255), 1)
+        cv2.putText(combined, preview_text, (10, self.height-20), 
+                  cv2.FONT_HERSHEY_SIMPLEX, 0.5, 
+                  (255, 100, 0) if self.preview_mode else (0, 255, 0), 1)
         
         return combined
     
@@ -317,6 +384,7 @@ class DualCameraHandRobotController:
     def _main_loop(self):
         """Main processing loop"""
         logger.info("Starting hand control loop")
+        logger.info(f"Preview mode is {'ON' if self.preview_mode else 'OFF'} - press 'p' to toggle")
         
         try:
             while self.running:
@@ -329,20 +397,29 @@ class DualCameraHandRobotController:
                     x, y = self.tip_coords[0]
                     z = self.z_value
                     
-                    # Predict and send to robot
+                    # 항상 예측은 함 (원시 예측값)
                     self.predicted_joints = self.predict_joints(x, y, z)
-                    if np.sum(self.predicted_joints) > 0:
+                    
+                    # 미리보기 모드가 아닐 때만 실제 모터로 전송 (스텝 값 사용)
+                    if not self.preview_mode and np.sum(self.predicted_joints) > 0:
                         self.robot.move_to_joint_positions(
-                            self.predicted_joints.round().astype(int),
+                            self.predicted_joints,
                             arm_type=self.arm_type
                         )
                 
+                # 키 입력 처리
+                key = cv2.waitKey(1) & 0xFF
+                
+                # 'p' 키로 미리보기 모드 전환
+                if key == ord('p'):
+                    self.preview_mode = not self.preview_mode
+                    logger.info(f"Preview mode {'activated' if self.preview_mode else 'deactivated'}")
+                # 'q' 키로 종료
+                elif key == ord('q'):
+                    break
+                
                 # Optional: display the combined view
                 cv2.imshow('Hand Controlled Robot', self.create_combined_display())
-                
-                # Check for quit key
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
                 
                 # Short sleep to reduce CPU usage
                 time.sleep(0.001)
@@ -357,7 +434,10 @@ class DualCameraHandRobotController:
         self.running = False
         
         if hasattr(self, 'thread') and self.thread.is_alive():
-            self.thread.join(timeout=1.0)
+            try:
+                self.thread.join(timeout=1.0)
+            except RuntimeError as e:
+                logger.warning(f"Thread join error: {e}")
         
         # Close hand models
         for hand_model in self.hands_models:
@@ -374,16 +454,25 @@ class DualCameraHandRobotController:
 
 def main():
     """Main function"""
+    global CALIBRATION_DIR
+    
     parser = argparse.ArgumentParser(description='Dual Camera Hand Controlled Robot')
     parser.add_argument('--arm', type=str, default='follower', choices=['follower', 'leader'],
                       help='Control arm type (follower or leader)')
-    parser.add_argument('--model', type=str, default='lerobot/capdol/models/model_parameters_resnet.npz',
+    parser.add_argument('--model', type=str, default='lerobot/capdol/models/final_model_20250515_2121.npz',
                       help='Neural network model parameters file')
     parser.add_argument('--camera1', type=int, default=4,
                       help='Camera 1 ID (for X,Y coordinates)')
     parser.add_argument('--camera2', type=int, default=0,
                       help='Camera 2 ID (for Z value)')
+    parser.add_argument('--calib-dir', type=str, default=CALIBRATION_DIR,
+                      help=f'Calibration directory (default: {CALIBRATION_DIR})')
+    parser.add_argument('--preview', action='store_true',
+                      help='Start in preview mode (no motor commands sent)')
     args = parser.parse_args()
+    
+    # 캘리브레이션 디렉토리 설정
+    CALIBRATION_DIR = args.calib_dir
     
     try:
         # Initialize robot
@@ -396,6 +485,10 @@ def main():
         controller = DualCameraHandRobotController(robot, args.model, args.arm)
         controller.camera1_id = args.camera1
         controller.camera2_id = args.camera2
+        
+        # 명령줄 인자로 미리보기 모드 설정
+        controller.preview_mode = True if args.preview else controller.preview_mode
+        
         controller.start()
         
         # Simple status display
@@ -403,6 +496,9 @@ def main():
         print(f"- Camera 1 (ID: {args.camera1}): X,Y coordinates")
         print(f"- Camera 2 (ID: {args.camera2}): Z value")
         print(f"- Controlling: {args.arm} arm")
+        print(f"- Calibration: {'LOADED' if robot.calibration_loaded else 'NOT LOADED'}")
+        print(f"- Calibration directory: {CALIBRATION_DIR}")
+        print(f"- Preview mode: {'ON' if controller.preview_mode else 'OFF'} (press 'p' to toggle)")
         print("Press 'q' to quit\n")
         
         # Wait for user to quit

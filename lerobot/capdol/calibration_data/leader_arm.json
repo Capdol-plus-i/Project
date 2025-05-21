@@ -1,27 +1,15 @@
 {
   "homing_offset": [
-    2048,
-    2048,
-    2048,
-    2048
+    0,
+    0,
+    0,
+    0
   ],
   "drive_mode": [
     0,
     0,
     0,
     0
-  ],
-  "start_pos": [
-    2029,
-    2087,
-    4068,
-    -1083
-  ],
-  "end_pos": [
-    1008,
-    3081,
-    2989,
-    -2035
   ],
   "calib_mode": [
     "DEGREE",
@@ -34,6 +22,5 @@
     "shoulder_lift",
     "elbow_flex",
     "wrist_flex"
-  ],
-  "calibration_timestamp": "2025-05-13T13:47:37.407034"
+  ]
 }

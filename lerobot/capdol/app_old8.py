@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-import os, json, time, threading, logging, numpy as np, cv2, serial
+import os, json, time, threading, logging, numpy as np, cv2, csv, serial
 from flask import Flask, render_template, Response, jsonify, request
-from flask_socketio import SocketIO, emit
 import mediapipe as mp
 from lerobot.common.robot_devices.robots.configs import KochRobotConfig
 from lerobot.common.robot_devices.motors.utils import make_motors_buses_from_configs
@@ -13,8 +12,11 @@ logger = logging.getLogger(__name__)
 
 # Paths and constants
 BASE_DIR = "lerobot/capdol"
-DATA_DIR = f"{BASE_DIR}/collected_data"
+CALIBRATION_DIR, DATA_DIR = f"{BASE_DIR}/calibration_data", f"{BASE_DIR}/collected_data"
 MODEL_PATH = f"{BASE_DIR}/models/model_parameters_resnet.npz"
+CSV_PATH = os.path.join(DATA_DIR, "robot_hand_data.csv")
+CSV_HEADERS = ["camera1_tip_x", "camera1_tip_y", "camera2_tip_x", "camera2_tip_y",
+               "follower_joint_1", "follower_joint_2", "follower_joint_3", "follower_joint_4"]
 BUTTON_POSITIONS = {0: 110, 1: 1110}  # Mode positions
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -26,7 +28,6 @@ DYNAMIXEL_IDS_ACM0 = [1, 2, 3, 4]  # IDs on first port
 DYNAMIXEL_IDS_ACM1 = [1]           # ID on second port
 
 app = Flask(__name__)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 mp_hands = mp.solutions.hands
 robot, controller = None, None
 
@@ -129,6 +130,7 @@ class ManipulatorRobot:
                         logger.error(f"Failed to add parameter for Dynamixel ID {dxl_id}")
             
             self.is_connected = True
+            self._load_calibration()
             return True
         except Exception as e:
             logger.error(f"Connection error: {e}")
@@ -142,6 +144,17 @@ class ManipulatorRobot:
             except:
                 pass
         self.is_connected = False
+
+    def _load_calibration(self):
+        path = os.path.join(CALIBRATION_DIR, 'follower_arm.json')
+        if os.path.exists(path):
+            try:
+                with open(path) as f:
+                    calib_data = json.load(f)
+                logger.info("Calibration loaded")
+                # Note: Implementation would depend on how calibration is used
+            except Exception as e:
+                logger.error(f"Calibration error: {e}")
 
     def disable_torque(self, arm_type='follower'):
         if not self.is_connected: return False
@@ -341,8 +354,6 @@ class RobotController:
         self.hand_detected = [False, False]
         self.z = 10
         self.serial_port = None
-        self.last_status_update = 0
-        self.status_update_interval = 0.1  # 100ms
         
         # Load model
         self.params = None
@@ -386,7 +397,6 @@ class RobotController:
         threading.Thread(target=self._process_loop, daemon=True).start()
         threading.Thread(target=self._serial_listener, daemon=True).start()
         logger.info("Controller started")
-        socketio.emit('system_status', {'status': 'ready'})
         return True
 
     def start_control(self):
@@ -395,7 +405,6 @@ class RobotController:
         if success:
             self.control_active = True
             logger.info("Robot control activated")
-            socketio.emit('control_status', {'active': True})
         return success
 
     def stop_control(self):
@@ -403,7 +412,6 @@ class RobotController:
             self.control_active = False
             self.robot.disable_torque(self.arm_type)
             logger.info("Robot control deactivated")
-            socketio.emit('control_status', {'active': False})
         return True
 
     def _serial_listener(self):
@@ -418,7 +426,6 @@ class RobotController:
                         if position is not None:
                             self.robot.set_joint_position(0, position, 'leader')
                             logger.info(f"Button mode {mode}: moved to {position}")
-                            socketio.emit('robot_mode', {'mode': mode, 'position': position})
                 time.sleep(0.1)
             except Exception as e:
                 logger.error(f"Serial error: {e}")
@@ -507,34 +514,12 @@ class RobotController:
                         self.tip[1][0] if self.hand_detected[1] else None, 
                         self.tip[1][1] if self.hand_detected[1] else None
                     ] + positions
-                
-                # Emit status updates at controlled intervals
-                current_time = time.time()
-                if current_time - self.last_status_update >= self.status_update_interval:
-                    self._emit_status_update()
-                    self.last_status_update = current_time
                     
                 time.sleep(0.01)
             except Exception as e:
                 logger.error(f"Processing error: {e}")
                 time.sleep(0.1)
         self._cleanup()
-
-    def _emit_status_update(self):
-        data = self.get_last_data()
-        safe_data = []
-        for v in data:
-            if v is None:
-                safe_data.append(None)
-            elif isinstance(v, np.generic):
-                safe_data.append(v.item())
-            else:
-                safe_data.append(int(v) if isinstance(v, (int, float)) else v)
-                
-        headers = ["camera1_tip_x", "camera1_tip_y", "camera2_tip_x", "camera2_tip_y",
-                 "follower_joint_1", "follower_joint_2", "follower_joint_3", "follower_joint_4"]
-                 
-        socketio.emit('status_update', dict(zip(headers, safe_data)))
 
     def _cleanup(self):
         self._cleanup_cameras()
@@ -561,6 +546,21 @@ class RobotController:
     def get_last_data(self):
         with self.data_lock:
             return self.last_data.copy()
+
+    def save_snapshot(self):
+        data = self.get_last_data()
+        try:
+            file_exists = os.path.isfile(CSV_PATH) and os.path.getsize(CSV_PATH) > 0
+            with open(CSV_PATH, 'a', newline='') as f:
+                writer = csv.writer(f)
+                if not file_exists:
+                    writer.writerow(CSV_HEADERS)
+                writer.writerow(data)
+            logger.info("Snapshot saved")
+            return True
+        except Exception as e:
+            logger.error(f"Snapshot error: {e}")
+            return False
 
     def stop(self):
         if not self.running: return
@@ -597,41 +597,54 @@ def generate_frames(cam_idx):
         except Exception:
             time.sleep(0.5)
 
-# WebSocket routes and event handlers
-@socketio.on('connect')
-def handle_connect():
-    logger.info('Client connected')
-    if controller and controller.running:
-        socketio.emit('system_status', {'status': 'ready'})
-        socketio.emit('control_status', {'active': controller.control_active})
-    else:
-        socketio.emit('system_status', {'status': 'initializing'})
-
-@socketio.on('start_control')
-def handle_start_control():
+@app.route('/take_snapshot', methods=['POST'])
+def take_snapshot():
     if not controller or not controller.running:
-        return {'success': False, 'error': 'System not ready'}
-    return {'success': controller.start_control()}
+        return jsonify({"success": False, "error": "System not ready"})
+    return jsonify({"success": controller.save_snapshot()})
 
-@socketio.on('stop_control')
-def handle_stop_control():
+@app.route('/status')
+def status():
     if not controller or not controller.running:
-        return {'success': False, 'error': 'System not ready'}
-    return {'success': controller.stop_control()}
-
-@socketio.on('set_robot_mode')
-def handle_set_robot_mode(data):
-    if not controller or not controller.running:
-        return {'success': False, 'error': 'System not ready'}
+        return jsonify({"error": "System not ready"})
     
-    mode = data.get('mode', 0)
+    data = controller.get_last_data()
+    safe_data = []
+    for v in data:
+        if v is None:
+            safe_data.append(None)
+        elif isinstance(v, np.generic):
+            safe_data.append(v.item())
+        else:
+            safe_data.append(int(v) if isinstance(v, (int, float)) else v)
+    
+    return jsonify(dict(zip(CSV_HEADERS, safe_data)))
+
+@app.route('/control/start', methods=['POST'])
+def start_control():
+    if not controller or not controller.running:
+        return jsonify({"success": False, "error": "System not ready"})
+    return jsonify({"success": controller.start_control()})
+
+@app.route('/control/stop', methods=['POST'])
+def stop_control():
+    if not controller or not controller.running:
+        return jsonify({"success": False, "error": "System not ready"})
+    return jsonify({"success": controller.stop_control()})
+
+@app.route('/absolute_position', methods=['POST'])
+def absolute_position():
+    if not controller or not controller.running:
+        return jsonify({"success": False, "error": "System not ready"})
+    
+    mode = request.json.get('mode', 0)
     position = BUTTON_POSITIONS.get(mode)
     
     if position is None:
-        return {'success': False, 'error': f'Invalid mode: {mode}'}
+        return jsonify({"success": False, "error": f"Invalid mode: {mode}"})
     
     success = robot.set_joint_position(0, position, 'leader')
-    return {'success': success, 'mode': mode, 'position': position}
+    return jsonify({"success": success, "mode": mode, "position": position})
 
 def init_system(model_path=MODEL_PATH, cam_ids=(0, 2), serial_port='/dev/ttyUSB0'):
     global robot, controller
@@ -640,7 +653,6 @@ def init_system(model_path=MODEL_PATH, cam_ids=(0, 2), serial_port='/dev/ttyUSB0
         robot = ManipulatorRobot()
         if not robot.connect():
             logger.error("Robot connection failed")
-            socketio.emit('system_status', {'status': 'error', 'message': 'Robot connection failed'})
             return False
         
         # Setup initial torque and control modes
@@ -651,15 +663,12 @@ def init_system(model_path=MODEL_PATH, cam_ids=(0, 2), serial_port='/dev/ttyUSB0
         if not controller.start(cam_ids, serial_port):
             logger.error("Controller start failed")
             robot.disconnect()
-            socketio.emit('system_status', {'status': 'error', 'message': 'Controller start failed'})
             return False
             
         logger.info("=== System ready ===")
-        socketio.emit('system_status', {'status': 'ready'})
         return True
     except Exception as e:
         logger.error(f"Initialization error: {e}")
-        socketio.emit('system_status', {'status': 'error', 'message': str(e)})
         return False
 
 def cleanup_system():
@@ -675,7 +684,7 @@ def main():
     threading.Thread(target=init_system, daemon=True).start()
     
     try:
-        socketio.run(app, host="0.0.0.0", port=5000, debug=False)
+        app.run(host="0.0.0.0", port=5000, debug=False, threaded=True)
     except KeyboardInterrupt:
         logger.info("User interrupt")
     finally:

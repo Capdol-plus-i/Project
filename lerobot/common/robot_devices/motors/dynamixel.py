@@ -37,8 +37,8 @@ MAX_ID_RANGE = 252
 # which corresponds to a half rotation on the left and half rotation on the right.
 # Some joints might require higher range, so we allow up to [-270, 270] degrees until
 # an error is raised.
-LOWER_BOUND_DEGREE = -270
-UPPER_BOUND_DEGREE = 270
+LOWER_BOUND_DEGREE = -360
+UPPER_BOUND_DEGREE = 360
 # For joints in percentage (i.e. joints that move linearly like the prismatic joint of a gripper),
 # their nominal range is [0, 100] %. For instance, for Aloha gripper, 0% is fully
 # closed, and 100% is fully open. To account for slight calibration issue, we allow up to
@@ -46,6 +46,7 @@ UPPER_BOUND_DEGREE = 270
 LOWER_BOUND_LINEAR = -10
 UPPER_BOUND_LINEAR = 110
 
+FULL_TURN_DEGREE = 360.0
 HALF_TURN_DEGREE = 180
 
 # https://emanual.robotis.com/docs/en/dxl/x/xl330-m077
@@ -622,7 +623,7 @@ class DynamixelMotorsBus:
 
                 # Convert from nominal 0-centered degree range [-180, 180] to
                 # 0-centered resolution range (e.g. [-2048, 2048] for resolution=4096)
-                values[i] = values[i] / HALF_TURN_DEGREE * (resolution // 2)
+                values[i] = values[i] / FULL_TURN_DEGREE * resolution
 
                 # Subtract the homing offsets to come back to actual motor range of values
                 # which can be arbitrary.
@@ -738,12 +739,12 @@ class DynamixelMotorsBus:
 
         values = np.array(values)
 
-        # Convert to signed int to use range [-2048, 2048] for our motor positions.
-        if data_name in CONVERT_UINT32_TO_INT32_REQUIRED:
-            values = values.astype(np.int32)
+        # Convert to unsigned int to use range [0, 4096] for our motor positions.
+        #if data_name in CONVERT_UINT32_TO_INT32_REQUIRED:
+        #    values = values.astype(np.uint32)
 
-        if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
-            values = self.apply_calibration_autocorrect(values, motor_names)
+        #if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
+        #    values = self.apply_calibration_autocorrect(values, motor_names)
 
         # log the number of seconds it took to read the data from the motors
         delta_ts_name = get_log_name("delta_timestamp_s", "read", data_name, motor_names)
@@ -815,8 +816,8 @@ class DynamixelMotorsBus:
             motor_ids.append(motor_idx)
             models.append(model)
 
-        if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
-            values = self.revert_calibration(values, motor_names)
+        #if data_name in CALIBRATION_REQUIRED and self.calibration is not None:
+        #    values = self.revert_calibration(values, motor_names)
 
         values = values.tolist()
 

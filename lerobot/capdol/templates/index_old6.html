@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>로봇 핸드 컨트롤러</title>
+  <style>
+    body { font-family: '맑은 고딕', Arial, sans-serif; background: #181818; color: #eee; text-align: center; }
+    h1 { color: #ffa500; }
+    .camera-container { display: flex; justify-content: center; gap: 24px; margin: 24px 0; }
+    .camera-box { border: 2px solid #ffa500; border-radius: 16px; padding: 8px; background: #222; }
+    .camera-title { margin-bottom: 8px; color: #ffa500; font-weight: bold; }
+    .btn { padding: 10px 30px; font-size: 1.1em; margin: 20px; background: #ffa500; border: none; border-radius: 10px; color: #222; font-weight: bold; cursor: pointer; }
+    .btn:hover { background: #ffcc66; }
+    .btn-group { display: flex; justify-content: center; gap: 16px; }
+    .btn-green { background: #4caf50; }
+    .btn-green:hover { background: #81c784; }
+    .btn-red { background: #f44336; }
+    .btn-red:hover { background: #e57373; }
+    #status-table { margin: 32px auto; border-collapse: collapse; }
+    #status-table th, #status-table td { padding: 8px 14px; border: 1px solid #444; }
+    #status-table th { background: #333; color: #ffa500; }
+    #status-table td { background: #262626; color: #eee; }
+    .status-indicator {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      margin-right: 8px;
+      background-color: #666;
+    }
+    .status-on { background-color: #4caf50; }
+    .status-off { background-color: #f44336; }
+  </style>
+</head>
+<body>
+  <h1>로봇 핸드 컨트롤러</h1>
+
+  <div class="camera-container">
+    <div class="camera-box">
+      <div class="camera-title">Camera 1 (Control)</div>
+      <img id="cam1" src="/video_feed1" width="320" height="240" />
+    </div>
+    <div class="camera-box">
+      <div class="camera-title">Camera 2 (Depth)</div>
+      <img id="cam2" src="/video_feed2" width="320" height="240" />
+    </div>
+  </div>
+
+  <div class="btn-group">
+    <button id="controlBtn" class="btn btn-green" onclick="toggleControl()">로봇 제어 시작</button>
+    <button class="btn" onclick="takeSnapshot()">스냅샷 저장</button>
+  </div>
+
+  <div style="margin: 20px 0;">
+    <span id="controlStatus">
+      <span class="status-indicator status-off"></span>
+      로봇 제어: 비활성화
+    </span>
+  </div>
+
+  <table id="status-table">
+    <tr>
+      <th>Camera 1 X</th>
+      <th>Camera 1 Y</th>
+      <th>Camera 2 X</th>
+      <th>Camera 2 Y</th>
+      <th>Follower Joint 1</th>
+      <th>Follower Joint 2</th>
+      <th>Follower Joint 3</th>
+      <th>Follower Joint 4</th>
+    </tr>
+    <tr id="status-row">
+      <td colspan="8">Loading...</td>
+    </tr>
+  </table>
+
+  <script>
+    let controlActive = false;
+    let statusErrorCount = 0;
+    const MAX_STATUS_ERRORS = 3;
+
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        const row = document.getElementById('status-row');
+        
+        if (data.error) {
+          statusErrorCount++;
+          if (statusErrorCount <= MAX_STATUS_ERRORS) {
+            console.log(`Status error: ${data.error} (${statusErrorCount}/${MAX_STATUS_ERRORS})`);
+          } else if (statusErrorCount === MAX_STATUS_ERRORS + 1) {
+            row.innerHTML = '<td colspan="8" style="color: #ff6b6b;">통신 오류 - 모터 연결 상태를 확인하세요</td>';
+          }
+        } else {
+          statusErrorCount = 0;
+          row.innerHTML = `
+            <td>${data.camera1_tip_x ?? '-'}</td>
+            <td>${data.camera1_tip_y ?? '-'}</td>
+            <td>${data.camera2_tip_x ?? '-'}</td>
+            <td>${data.camera2_tip_y ?? '-'}</td>
+            <td>${data.follower_joint_1 ?? '-'}</td>
+            <td>${data.follower_joint_2 ?? '-'}</td>
+            <td>${data.follower_joint_3 ?? '-'}</td>
+            <td>${data.follower_joint_4 ?? '-'}</td>
+          `;
+        }
+      } catch {
+        statusErrorCount++;
+        const row = document.getElementById('status-row');
+        if (statusErrorCount <= MAX_STATUS_ERRORS) {
+          console.log(`Network error (${statusErrorCount}/${MAX_STATUS_ERRORS})`);
+        } else if (statusErrorCount === MAX_STATUS_ERRORS + 1) {
+          row.innerHTML = '<td colspan="8" style="color: #ff6b6b;">네트워크 연결 오류</td>';
+        }
+      }
+    }
+
+    function toggleControl() {
+      const statusIndicator = document.querySelector('#controlStatus .status-indicator');
+      const controlStatusText = document.getElementById('controlStatus');
+      const controlBtn = document.getElementById('controlBtn');
+      
+      if (controlActive) {
+        // Stop control
+        fetch('/control/stop', { method: 'POST' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              controlActive = false;
+              statusIndicator.classList.remove('status-on');
+              statusIndicator.classList.add('status-off');
+              controlStatusText.innerHTML = `
+                <span class="status-indicator status-off"></span>
+                로봇 제어: 비활성화
+              `;
+              controlBtn.textContent = '로봇 제어 시작';
+              controlBtn.classList.remove('btn-red');
+              controlBtn.classList.add('btn-green');
+            } else {
+              alert('제어 중지 실패');
+            }
+          })
+          .catch(() => alert('네트워크 오류'));
+      } else {
+        // Start control
+        fetch('/control/start', { method: 'POST' })
+          .then(res => res.json())
+          .then(data => {
+            if (data.success) {
+              controlActive = true;
+              statusIndicator.classList.remove('status-off');
+              statusIndicator.classList.add('status-on');
+              controlStatusText.innerHTML = `
+                <span class="status-indicator status-on"></span>
+                로봇 제어: 활성화
+              `;
+              controlBtn.textContent = '로봇 제어 중지';
+              controlBtn.classList.remove('btn-green');
+              controlBtn.classList.add('btn-red');
+            } else {
+              alert('제어 시작 실패');
+            }
+          })
+          .catch(() => alert('네트워크 오류'));
+      }
+    }
+
+    function takeSnapshot() {
+      fetch('/take_snapshot', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('스냅샷이 저장되었습니다!');
+          } else {
+            alert('스냅샷 저장 실패');
+          }
+        })
+        .catch(() => alert('네트워크 오류'));
+    }
+
+    setInterval(fetchStatus, 1000); // 1초마다 상태 갱신
+    window.onload = function() { fetchStatus(); };
+  </script>
+</body>
+</html>

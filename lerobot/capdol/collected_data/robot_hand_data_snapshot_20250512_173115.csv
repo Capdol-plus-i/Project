@@ -1,2 +1,0 @@
-frame,timestamp,cam1_hand_detected,cam1_tip_x,cam1_tip_y,cam2_hand_detected,cam2_tip_x,cam2_tip_y,leader_joint1,leader_joint2,leader_joint3,leader_joint4,follower_joint1,follower_joint2,follower_joint3,follower_joint4
-1007,1747038675.7593832,True,206,261,True,495,108,1330,797,382,2177,1331,793,432,2172

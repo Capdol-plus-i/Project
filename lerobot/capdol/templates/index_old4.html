@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>로봇 핸드 데이터 수집기</title>
+  <style>
+    body { font-family: '맑은 고딕', Arial, sans-serif; background: #181818; color: #eee; text-align: center; }
+    h1 { color: #ffa500; }
+    .camera-container { display: flex; justify-content: center; gap: 24px; margin: 24px 0; }
+    .camera-box { border: 2px solid #ffa500; border-radius: 16px; padding: 8px; background: #222; }
+    .camera-title { margin-bottom: 8px; color: #ffa500; font-weight: bold; }
+    .btn { padding: 10px 30px; font-size: 1.1em; margin: 20px; background: #ffa500; border: none; border-radius: 10px; color: #222; font-weight: bold; cursor: pointer; }
+    .btn:hover { background: #ffcc66; }
+    #status-table { margin: 32px auto; border-collapse: collapse; }
+    #status-table th, #status-table td { padding: 8px 14px; border: 1px solid #444; }
+    #status-table th { background: #333; color: #ffa500; }
+    #status-table td { background: #262626; color: #eee; }
+  </style>
+</head>
+<body>
+  <h1>로봇 핸드 데이터 수집기</h1>
+
+  <div class="camera-container">
+    <div class="camera-box">
+      <div class="camera-title">Camera 1</div>
+      <img id="cam1" src="/video_feed1" width="320" height="240" />
+    </div>
+    <div class="camera-box">
+      <div class="camera-title">Camera 2</div>
+      <img id="cam2" src="/video_feed2" width="320" height="240" />
+    </div>
+  </div>
+
+  <button class="btn" onclick="takeSnapshot()">스냅샷 저장</button>
+
+  <table id="status-table">
+    <tr>
+      <th>Camera 1 X</th>
+      <th>Camera 1 Y</th>
+      <th>Camera 2 X</th>
+      <th>Camera 2 Y</th>
+      <th>Follower Joint 1</th>
+      <th>Follower Joint 2</th>
+      <th>Follower Joint 3</th>
+      <th>Follower Joint 4</th>
+    </tr>
+    <tr id="status-row">
+      <td colspan="8">Loading...</td>
+    </tr>
+  </table>
+
+  <script>
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/status');
+        const data = await res.json();
+        const row = document.getElementById('status-row');
+        row.innerHTML = `
+          <td>${data.camera1_tip_x ?? '-'}</td>
+          <td>${data.camera1_tip_y ?? '-'}</td>
+          <td>${data.camera2_tip_x ?? '-'}</td>
+          <td>${data.camera2_tip_y ?? '-'}</td>
+          <td>${data.follower_joint_1 ?? '-'}</td>
+          <td>${data.follower_joint_2 ?? '-'}</td>
+          <td>${data.follower_joint_3 ?? '-'}</td>
+          <td>${data.follower_joint_4 ?? '-'}</td>
+        `;
+      } catch {
+        document.getElementById('status-row').innerHTML = '<td colspan="8">연결 오류</td>';
+      }
+    }
+
+    function updateTable() {
+        fetch('/data').then(res => res.json()).then(obj => {
+            const tb = document.getElementById('data-table').getElementsByTagName('tbody')[0];
+            tb.innerHTML = '';
+            if (!obj.data || obj.data.length === 0) {
+                tb.innerHTML = '<tr><td colspan="8">기록 없음</td></tr>';
+                return;
+            }
+            obj.data.forEach(row => {
+                tb.innerHTML += `
+                <tr>
+                    <td>${row.camera1_tip_x ?? '-'}</td>
+                    <td>${row.camera1_tip_y ?? '-'}</td>
+                    <td>${row.camera2_tip_x ?? '-'}</td>
+                    <td>${row.camera2_tip_y ?? '-'}</td>
+                    <td>${row.follower_joint_1 ?? '-'}</td>
+                    <td>${row.follower_joint_2 ?? '-'}</td>
+                    <td>${row.follower_joint_3 ?? '-'}</td>
+                    <td>${row.follower_joint_4 ?? '-'}</td>
+                </tr>
+                `;
+            });
+        });
+    }
+
+    function takeSnapshot() {
+      fetch('/take_snapshot', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            alert('스냅샷이 저장되었습니다!');
+          } else {
+            alert('스냅샷 저장 실패');
+          }
+        })
+        .catch(() => alert('네트워크 오류'));
+    }
+
+    setInterval(fetchStatus, 700); // 0.7초마다 상태 갱신
+    window.onload = function() { fetchStatus(); updateTable(); };
+  </script>
+</body>
+</html>

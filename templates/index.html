@@ -1,33 +1,227 @@
+
 <!DOCTYPE html>
 <html>
 <head>
-    <title>USB Camera Stream</title>
+    <title>Dual Camera Hand Robot Controller</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            text-align: center;
-        }
-        h1 {
+            margin: 20px;
+            background-color: #f0f0f0;
             color: #333;
         }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .container {
+            max-width: 1300px;
+            margin: 0 auto;
+        }
         .video-container {
-            margin: 20px auto;
-            max-width: 800px;
-            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .controls {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+            gap: 10px;
+        }
+        button {
+            background-color: #3498db;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+        button:disabled {
+            background-color: #95a5a6;
+            cursor: not-allowed;
+        }
+        .pause-button {
+            background-color: #e74c3c;
+        }
+        .pause-button:hover {
+            background-color: #c0392b;
+        }
+        .resume-button {
+            background-color: #27ae60;
+        }
+        .resume-button:hover {
+            background-color: #2ecc71;
+        }
+        .status {
+            background-color: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        .status-item {
+            padding: 10px;
+            background-color: #ecf0f1;
+            border-radius: 5px;
+        }
+        .good {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .bad {
+            color: #e74c3c;
+            font-weight: bold;
         }
         img {
-            width: 100%;
-            height: auto;
-            display: block;
+            max-width: 100%;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
     </style>
 </head>
 <body>
-    <h1>USB Camera Stream</h1>
-    <div class="video-container">
-        <img src="{{ url_for('video_feed') }}" alt="Camera Stream">
+    <div class="container">
+        <h1>Dual Camera Hand Robot Controller</h1>
+        
+        <div class="status">
+            <h2>Status Information</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <strong>Calibration:</strong> 
+                    <span id="calibration-status" class="good">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <strong>Controlling:</strong> 
+                    <span id="arm-type">Loading...</span>
+                </div>
+                <div class="status-item">
+                    <strong>Hand Detected:</strong> 
+                    <span id="hand-detected">No</span>
+                </div>
+                <div class="status-item">
+                    <strong>Coordinates:</strong> 
+                    <span id="hand-coords">X=0, Y=0, Z=0</span>
+                </div>
+                <div class="status-item">
+                    <strong>Joint Positions:</strong> 
+                    <span id="joint-positions">[0, 0, 0, 0]</span>
+                </div>
+                <div class="status-item">
+                    <strong>System Status:</strong> 
+                    <span id="system-status" class="good">Running</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="leader-button" onclick="setArmType('leader')">Control Leader Arm</button>
+            <button id="follower-button" onclick="setArmType('follower')">Control Follower Arm</button>
+            <button id="pause-button" class="pause-button" onclick="pauseSystem()">Pause</button>
+            <button id="resume-button" class="resume-button" onclick="resumeSystem()" disabled>Resume</button>
+        </div>
+        
+        <div class="video-container">
+            <img src="{{ url_for('video_feed') }}" alt="Dual Camera Feed">
+        </div>
     </div>
+
+    <script>
+        // Update status information
+        function updateStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    // Update calibration status
+                    const calibrationStatus = document.getElementById('calibration-status');
+                    calibrationStatus.textContent = data.calibrated ? 'LOADED' : 'NOT LOADED';
+                    calibrationStatus.className = data.calibrated ? 'good' : 'bad';
+                    
+                    // Update arm type
+                    document.getElementById('arm-type').textContent = 
+                        data.arm_type.charAt(0).toUpperCase() + data.arm_type.slice(1);
+                    
+                    // Update hand detection
+                    document.getElementById('hand-detected').textContent = 
+                        data.hand_detected ? 'Yes' : 'No';
+                    
+                    // Update coordinates
+                    document.getElementById('hand-coords').textContent = 
+                        `X=${data.hand_coords.x}, Y=${data.hand_coords.y}, Z=${data.hand_coords.z}`;
+                    
+                    // Update joint positions
+                    document.getElementById('joint-positions').textContent = 
+                        `[${data.predicted_joints.join(', ')}]`;
+                    
+                    // Update system status
+                    const systemStatus = document.getElementById('system-status');
+                    systemStatus.textContent = data.paused ? 'PAUSED' : 'Running';
+                    systemStatus.className = data.paused ? 'bad' : 'good';
+                    
+                    // Update button states
+                    document.getElementById('pause-button').disabled = data.paused;
+                    document.getElementById('resume-button').disabled = !data.paused;
+                    
+                    // Update arm control buttons
+                    document.getElementById('leader-button').disabled = data.arm_type === 'leader';
+                    document.getElementById('follower-button').disabled = data.arm_type === 'follower';
+                });
+        }
+        
+        // Set arm type
+        function setArmType(armType) {
+            fetch('/set_arm_type', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ arm_type: armType }),
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    updateStatus();
+                }
+            });
+        }
+        
+        // Pause system
+        function pauseSystem() {
+            fetch('/pause', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                    }
+                });
+        }
+        
+        // Resume system
+        function resumeSystem() {
+            fetch('/resume', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatus();
+                    }
+                });
+        }
+        
+        // Update status every second
+        setInterval(updateStatus, 1000);
+        
+        // Initial status update
+        updateStatus();
+    </script>
 </body>
 </html>
