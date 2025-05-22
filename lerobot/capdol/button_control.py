@@ -54,7 +54,7 @@ def serial_listener(robot, ser):
 def main():
     r, ser = None, None
     try:
-        ser = serial.Serial('/dev/ttyUSB0', 9600, timeout=1)
+        ser = serial.Serial('/dev/ttyACM2', 9600, timeout=1)
         time.sleep(2)
         r = Robot()
         r.connect()

@@ -4,283 +4,431 @@
   <meta charset="UTF-8">
   <title>로봇 핸드 컨트롤러</title>
   <style>
-    body { font-family: '맑은 고딕', Arial, sans-serif; background: #181818; color: #eee; text-align: center; }
-    h1 { color: #ffa500; }
-    .camera-container { display: flex; justify-content: center; gap: 24px; margin: 24px 0; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #181818; color: #eee; padding: 20px; }
+    
+    /* Layout */
+    .header { text-align: center; margin-bottom: 30px; }
+    .header h1 { color: #ffa500; margin-bottom: 10px; }
+    .header .subtitle { color: #ccc; font-size: 1.1em; }
+    
+    .container { max-width: 1400px; margin: 0 auto; }
+    .grid { display: grid; gap: 20px; }
+    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    
+    /* Components */
+    .card { background: #222; border-radius: 16px; padding: 20px; border: 2px solid #444; }
+    .card-title { color: #ffa500; margin-bottom: 15px; font-size: 1.4em; }
+    .card-subtitle { color: #ccc; margin-bottom: 15px; font-size: 0.95em; }
+    
+    .btn { padding: 10px 20px; font-size: 1em; margin: 5px; background: #ffa500; 
+           border: none; border-radius: 8px; color: #222; font-weight: bold; 
+           cursor: pointer; transition: all 0.3s; min-width: 100px; }
+    .btn:hover { transform: translateY(-2px); }
+    .btn:disabled { background: #666; color: #999; cursor: not-allowed; transform: none; }
+    
+    /* Button variants */
+    .btn-green { background: #4caf50; } .btn-green:hover { background: #81c784; }
+    .btn-red { background: #f44336; } .btn-red:hover { background: #e57373; }
+    .btn-blue { background: #2196f3; } .btn-blue:hover { background: #64b5f6; }
+    .btn-purple { background: #9c27b0; } .btn-purple:hover { background: #ba68c8; }
+    .btn-orange { background: #ff9800; } .btn-orange:hover { background: #ffb74d; }
+    
+    /* Camera */
+    .camera-grid { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
     .camera-box { border: 2px solid #ffa500; border-radius: 16px; padding: 8px; background: #222; }
-    .camera-title { margin-bottom: 8px; color: #ffa500; font-weight: bold; }
-    .btn { padding: 10px 30px; font-size: 1.1em; margin: 20px; background: #ffa500; border: none; border-radius: 10px; color: #222; font-weight: bold; cursor: pointer; }
-    .btn:hover { background: #ffcc66; }
-    .btn-group { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; }
-    .btn-green { background: #4caf50; }
-    .btn-green:hover { background: #81c784; }
-    .btn-red { background: #f44336; }
-    .btn-red:hover { background: #e57373; }
-    .btn-blue { background: #2196f3; }
-    .btn-blue:hover { background: #64b5f6; }
-    .btn-purple { background: #9c27b0; }
-    .btn-purple:hover { background: #ba68c8; }
-    .mode-btn { width: 120px; }
-    #status-table { margin: 32px auto; border-collapse: collapse; }
-    #status-table th, #status-table td { padding: 8px 14px; border: 1px solid #444; }
-    #status-table th { background: #333; color: #ffa500; }
-    #status-table td { background: #262626; color: #eee; }
-    .status-indicator {
-      display: inline-block;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      margin-right: 8px;
-      background-color: #666;
+    .camera-title { margin-bottom: 8px; color: #ffa500; font-weight: bold; text-align: center; }
+    .camera-box img { max-width: 100%; height: auto; }
+    
+    /* Status */
+    .status-bar { position: fixed; top: 10px; right: 10px; padding: 8px 15px; 
+                  border-radius: 5px; font-size: 0.9em; z-index: 1000; }
+    .status-connected { background: #4caf50; }
+    .status-disconnected { background: #f44336; }
+    
+    .status-grid { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin: 20px 0; }
+    .status-item { background: #333; padding: 12px 16px; border-radius: 8px; 
+                   border: 1px solid #444; min-width: 160px; text-align: center; }
+    
+    .indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; 
+                 margin-right: 6px; background: #666; }
+    .indicator.on { background: #4caf50; }
+    .indicator.off { background: #f44336; }
+    .indicator.warning { background: #ff9800; }
+    .indicator.pulse { animation: pulse 2s infinite; }
+    
+    @keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+    
+    /* Data table */
+    .data-table { width: 100%; border-collapse: collapse; background: #222; 
+                  border-radius: 10px; overflow: hidden; margin: 20px 0; }
+    .data-table th, .data-table td { padding: 8px 12px; border: 1px solid #444; text-align: center; }
+    .data-table th { background: #333; color: #ffa500; }
+    .data-table td { background: #262626; }
+    
+    /* Voice log */
+    .voice-log { height: 200px; overflow-y: auto; padding: 12px; background: #262626; 
+                 border-radius: 8px; font-family: monospace; font-size: 0.9em; 
+                 border: 1px solid #444; }
+    .voice-entry { margin: 6px 0; padding: 4px; border-radius: 4px; }
+    .voice-listening { color: #64b5f6; }
+    .voice-wake-word { color: #4caf50; font-weight: bold; }
+    .voice-command { color: #ba68c8; font-weight: bold; }
+    .voice-executed { color: #ffa500; font-weight: bold; }
+    .voice-timeout { color: #ff9800; }
+    .voice-error { color: #f44336; font-weight: bold; }
+    
+    /* Notification */
+    .notification { position: fixed; top: 60px; right: 10px; padding: 10px 15px; 
+                    border-radius: 5px; color: white; z-index: 1000; opacity: 0; transition: opacity 0.3s; }
+    .notification.show { opacity: 1; }
+    .notification.success { background: #4caf50; }
+    .notification.error { background: #f44336; }
+    .notification.warning { background: #ff9800; }
+    
+    /* CSV Info */
+    .csv-info { background: #333; border-radius: 8px; padding: 15px; margin-top: 15px; 
+                font-family: monospace; display: none; }
+    .csv-info div { margin: 6px 0; }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .camera-grid { flex-direction: column; align-items: center; }
+      .status-grid { flex-direction: column; align-items: center; }
+      .grid { grid-template-columns: 1fr; }
+      .btn { width: 100%; margin: 5px 0; }
     }
-    .status-on { background-color: #4caf50; }
-    .status-off { background-color: #f44336; }
-    .section-title { color: #ffa500; margin-top: 30px; }
-    .status-panel { 
-      display: flex; 
-      justify-content: center; 
-      gap: 30px; 
-      margin: 20px 0;
-      flex-wrap: wrap;
-    }
-    .status-item {
-      background: #222;
-      padding: 10px 20px;
-      border-radius: 10px;
-      border: 1px solid #444;
-    }
-    #connection-status {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      padding: 5px 10px;
-      border-radius: 5px;
-      font-size: 0.9em;
-      background-color: #444;
-    }
-    .connected { background-color: #4caf50 !important; }
-    .disconnected { background-color: #f44336 !important; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
 </head>
 <body>
-  <div id="connection-status" class="disconnected">연결 중...</div>
-  <h1>로봇 핸드 컨트롤러</h1>
-
-  <div class="camera-container">
-    <div class="camera-box">
-      <div class="camera-title">Camera 1 (Control)</div>
-      <img id="cam1" src="/video_feed1" width="640" height="480" />
+  <div id="status-bar" class="status-bar status-disconnected">연결 중...</div>
+  <div id="notification" class="notification"></div>
+  
+  <div class="container">
+    <div class="header">
+      <h1>🤖 로봇 핸드 컨트롤러</h1>
+      <div class="subtitle">AI 기반 로봇 제어 시스템</div>
     </div>
-    <div class="camera-box">
-      <div class="camera-title">Camera 2 (Depth)</div>
-      <img id="cam2" src="/video_feed2" width="640" height="480" />
+
+    <!-- Camera Section -->
+    <div class="camera-grid">
+      <div class="camera-box">
+        <div class="camera-title">📹 Camera 1 (Control)</div>
+        <img src="/video_feed1" width="640" height="480" alt="Camera 1" />
+      </div>
+      <div class="camera-box">
+        <div class="camera-title">📹 Camera 2 (Depth)</div>
+        <img src="/video_feed2" width="640" height="480" alt="Camera 2" />
+      </div>
     </div>
-  </div>
 
-  <h3 class="section-title">추적 기반 제어 (Follower 암)</h3>
-  <div class="btn-group">
-    <button id="controlBtn" class="btn btn-green" onclick="toggleControl()">로봇 제어 시작</button>
-  </div>
+    <!-- Main Controls -->
+    <div class="grid grid-2">
+      <!-- Data Collection -->
+      <div class="card">
+        <h3 class="card-title">📊 데이터 수집</h3>
+        <div class="card-subtitle">현재 로봇 상태를 CSV 파일에 저장</div>
+        <div class="grid grid-4">
+          <button class="btn btn-green" onclick="takeSnapshot()">📸 저장</button>
+          <button class="btn btn-blue" onclick="getCsvInfo()">📋 정보</button>
+          <button class="btn btn-red" onclick="clearCsv()">🗑️ 초기화</button>
+        </div>
+        <div id="csv-info" class="csv-info">
+          <div><strong>파일:</strong> <span id="csv-path">-</span></div>
+          <div><strong>데이터:</strong> <span id="csv-rows">0</span>행</div>
+          <div><strong>크기:</strong> <span id="csv-size">0</span> bytes</div>
+        </div>
+      </div>
 
-  <h3 class="section-title">버튼 기반 제어 (Leader 암)</h3>
-  <div class="btn-group">
-    <button class="btn btn-blue mode-btn" onclick="setRobotMode(0)">모드 0<br>(위치 110)</button>
-    <button class="btn btn-purple mode-btn" onclick="setRobotMode(1)">모드 1<br>(위치 1110)</button>
-  </div>
+      <!-- Hand Control -->
+      <div class="card">
+        <h3 class="card-title">🎯 손 추적 제어</h3>
+        <div class="card-subtitle">손 움직임으로 로봇 제어</div>
+        <button id="control-btn" class="btn btn-green" onclick="toggleControl()">제어 시작</button>
+      </div>
 
-  <div class="status-panel">
-    <div class="status-item">
-      <span id="controlStatus">
-        <span class="status-indicator status-off"></span>
-        로봇 제어: 비활성화
-      </span>
+      <!-- Voice Control -->
+      <div class="card">
+        <h3 class="card-title">🎤 음성 제어</h3>
+        <div class="card-subtitle">음성 명령으로 로봇 제어</div>
+        <button id="voice-btn" class="btn btn-blue" onclick="toggleVoice()">음성 시작</button>
+        <div id="voice-log" class="voice-log">
+          <div class="voice-entry">음성 인식 로그가 여기에 표시됩니다.</div>
+        </div>
+        <div style="margin-top: 10px; font-size: 0.9em;">
+          <div><strong>웨이크워드:</strong> 하이봇, 아이봇</div>
+          <div><strong>명령어:</strong> 왼쪽, 오른쪽, 위, 아래, 종료</div>
+        </div>
+      </div>
+
+      <!-- Manual Control -->
+      <div class="card">
+        <h3 class="card-title">🕹️ 수동 제어</h3>
+        <div class="card-subtitle">로봇 모드 및 LED 제어</div>
+        <div class="grid grid-4">
+          <button class="btn btn-blue" onclick="setMode(0)">모드 0</button>
+          <button class="btn btn-purple" onclick="setMode(1)">모드 1</button>
+        </div>
+        <div class="grid grid-4" style="margin-top: 15px;">
+          <button class="btn btn-orange" onclick="setLED(0)">LED OFF</button>
+          <button class="btn btn-orange" onclick="setLED(1)">LED 1</button>
+          <button class="btn btn-orange" onclick="setLED(3)">LED 3</button>
+          <button class="btn btn-orange" onclick="setLED(5)">LED MAX</button>
+        </div>
+      </div>
     </div>
-    <div class="status-item">
-      <span id="robotModeStatus">
-        <span class="status-indicator status-off"></span>
-        현재 모드: -
-      </span>
-    </div>
-  </div>
 
-  <table id="status-table">
-    <tr>
-      <th>Camera 1 X</th>
-      <th>Camera 1 Y</th>
-      <th>Camera 2 X</th>
-      <th>Camera 2 Y</th>
-      <th>Follower Joint 1</th>
-      <th>Follower Joint 2</th>
-      <th>Follower Joint 3</th>
-      <th>Follower Joint 4</th>
-    </tr>
-    <tr id="status-row">
-      <td colspan="8">Loading...</td>
-    </tr>
-  </table>
+    <!-- Status Panel -->
+    <div class="status-grid">
+      <div class="status-item">
+        <span id="control-status"><span class="indicator off"></span>제어: 비활성</span>
+      </div>
+      <div class="status-item">
+        <span id="mode-status"><span class="indicator off"></span>모드: -</span>
+      </div>
+      <div class="status-item">
+        <span id="led-status"><span class="indicator off"></span>LED: -</span>
+      </div>
+      <div class="status-item">
+        <span id="voice-status"><span class="indicator off"></span>음성: 비활성</span>
+      </div>
+    </div>
+
+    <!-- Data Table -->
+    <table class="data-table">
+      <tr>
+        <th>Cam1 X</th><th>Cam1 Y</th><th>Cam2 X</th><th>Cam2 Y</th>
+        <th>Joint 1</th><th>Joint 2</th><th>Joint 3</th><th>Joint 4</th>
+      </tr>
+      <tr id="data-row">
+        <td colspan="8">시스템 로딩 중...</td>
+      </tr>
+    </table>
+  </div>
 
   <script>
-    let controlActive = false;
-    let currentMode = null;
-    let socket = null;
-    let isConnected = false;
+    // Global state
+    let socket, isConnected = false, controlActive = false, voiceActive = false;
     
-    function updateConnectionStatus(connected) {
-      const connectionStatus = document.getElementById('connection-status');
+    // Utility functions
+    const $ = id => document.getElementById(id);
+    const updateIndicator = (id, status) => {
+      const el = $(id).querySelector('.indicator');
+      el.className = `indicator ${status}`;
+    };
+    
+    const showNotification = (msg, type = 'success') => {
+      const n = $('notification');
+      n.textContent = msg;
+      n.className = `notification ${type} show`;
+      setTimeout(() => n.classList.remove('show'), 3000);
+    };
+    
+    const updateConnection = connected => {
+      isConnected = connected;
+      const bar = $('status-bar');
+      bar.textContent = connected ? '🟢 연결됨' : '🔴 연결 끊김';
+      bar.className = `status-bar status-${connected ? 'connected' : 'disconnected'}`;
       
-      if (connected) {
-        connectionStatus.textContent = '연결됨';
-        connectionStatus.classList.remove('disconnected');
-        connectionStatus.classList.add('connected');
-        isConnected = true;
-      } else {
-        connectionStatus.textContent = '연결 끊김';
-        connectionStatus.classList.remove('connected');
-        connectionStatus.classList.add('disconnected');
-        isConnected = false;
-      }
-    }
+      // Enable/disable all buttons
+      document.querySelectorAll('.btn').forEach(btn => btn.disabled = !connected);
+    };
     
-    function initializeSocket() {
+    const emit = (event, data, callback) => {
+      if (!isConnected) {
+        showNotification('서버와 연결되어 있지 않습니다.', 'error');
+        return;
+      }
+      socket.emit(event, data, callback);
+    };
+    
+    // Control functions
+    const toggleControl = () => {
+      emit(controlActive ? 'stop_control' : 'start_control', {}, res => {
+        if (res.success) {
+          showNotification(`제어가 ${controlActive ? '중지' : '시작'}되었습니다.`);
+        } else {
+          showNotification('제어 변경 실패', 'error');
+        }
+      });
+    };
+    
+    const toggleVoice = () => {
+      emit(voiceActive ? 'stop_voice_recognition' : 'start_voice_recognition', {}, res => {
+        if (res.success) {
+          showNotification(`음성 인식이 ${voiceActive ? '중지' : '시작'}되었습니다.`);
+        } else {
+          showNotification('음성 인식 변경 실패', 'error');
+        }
+      });
+    };
+    
+    const setMode = mode => {
+      emit('set_robot_mode', {mode}, res => {
+        if (res.success) {
+          showNotification(`모드 ${mode}으로 변경됨`);
+        } else {
+          showNotification('모드 변경 실패', 'error');
+        }
+      });
+    };
+    
+    const setLED = level => {
+      emit('send_serial_command', {command: `CMD:LED:${level}`}, res => {
+        if (res.success) {
+          showNotification(`LED 레벨 ${level}로 설정됨`);
+        } else {
+          showNotification('LED 설정 실패', 'error');
+        }
+      });
+    };
+    
+    // CSV functions
+    const takeSnapshot = () => {
+      emit('take_snapshot', {}, res => {
+        if (res.success) {
+          showNotification('스냅샷 저장됨');
+          if ($('csv-info').style.display !== 'none') getCsvInfo();
+        } else {
+          showNotification('저장 실패', 'error');
+        }
+      });
+    };
+    
+    const getCsvInfo = () => {
+      emit('get_csv_info', {}, res => {
+        const info = $('csv-info');
+        if (res.success && res.exists) {
+          $('csv-path').textContent = res.file_path;
+          $('csv-rows').textContent = res.row_count;
+          $('csv-size').textContent = res.file_size;
+          info.style.display = 'block';
+          showNotification(`CSV: ${res.row_count}행 저장됨`);
+        } else {
+          info.style.display = 'none';
+          showNotification('CSV 파일 없음', 'warning');
+        }
+      });
+    };
+    
+    const clearCsv = () => {
+      if (!confirm('CSV 파일을 삭제하시겠습니까?')) return;
+      emit('clear_csv', {}, res => {
+        if (res.success) {
+          $('csv-info').style.display = 'none';
+          showNotification('CSV 삭제됨');
+        } else {
+          showNotification('삭제 실패', 'error');
+        }
+      });
+    };
+    
+    // Voice logging
+    const addVoiceLog = (prefix, text, type) => {
+      const log = $('voice-log');
+      const entry = document.createElement('div');
+      entry.className = `voice-entry voice-${type}`;
+      const time = new Date().toLocaleTimeString();
+      entry.innerHTML = `<span style="color: #666;">[${time}]</span> ${prefix}: ${text}`;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+      
+      if (log.children.length > 30) log.removeChild(log.firstChild);
+    };
+    
+    // Status updates
+    const updateControlStatus = active => {
+      controlActive = active;
+      updateIndicator('control-status', active ? 'on' : 'off');
+      $('control-status').innerHTML = `<span class="indicator ${active ? 'on' : 'off'}"></span>제어: ${active ? '활성' : '비활성'}`;
+      const btn = $('control-btn');
+      btn.textContent = active ? '🛑 제어 중지' : '▶️ 제어 시작';
+      btn.className = `btn ${active ? 'btn-red' : 'btn-green'}`;
+    };
+    
+    const updateVoiceStatus = active => {
+      voiceActive = active;
+      updateIndicator('voice-status', active ? 'on pulse' : 'off');
+      $('voice-status').innerHTML = `<span class="indicator ${active ? 'on pulse' : 'off'}"></span>음성: ${active ? '활성' : '비활성'}`;
+      const btn = $('voice-btn');
+      btn.textContent = active ? '🛑 음성 중지' : '🎤 음성 시작';
+      btn.className = `btn ${active ? 'btn-red' : 'btn-blue'}`;
+    };
+    
+    const updateModeStatus = mode => {
+      updateIndicator('mode-status', 'on');
+      $('mode-status').innerHTML = `<span class="indicator on"></span>모드: ${mode}`;
+    };
+    
+    const updateLEDStatus = level => {
+      updateIndicator('led-status', 'on');
+      $('led-status').innerHTML = `<span class="indicator on"></span>LED: Level ${level}`;
+    };
+    
+    const updateDataTable = data => {
+      const format = v => v !== null ? v : '-';
+      $('data-row').innerHTML = `
+        <td>${format(data.camera1_tip_x)}</td><td>${format(data.camera1_tip_y)}</td>
+        <td>${format(data.camera2_tip_x)}</td><td>${format(data.camera2_tip_y)}</td>
+        <td>${format(data.follower_joint_1)}</td><td>${format(data.follower_joint_2)}</td>
+        <td>${format(data.follower_joint_3)}</td><td>${format(data.follower_joint_4)}</td>
+      `;
+    };
+    
+    // Voice recognition handlers
+    const handleVoiceRecognition = data => {
+      const icons = {
+        listening: '📝', wake_word: '✅', command: '🎯', 
+        executed: '💡', timeout: '⏰', error: '❌'
+      };
+      addVoiceLog(icons[data.type] || 'ℹ️', data.text, data.type);
+    };
+    
+    // Initialize
+    window.onload = () => {
       socket = io();
       
+      // Connection events
       socket.on('connect', () => {
-        console.log('Connected to server');
-        updateConnectionStatus(true);
+        updateConnection(true);
+        showNotification('서버에 연결됨');
       });
       
       socket.on('disconnect', () => {
-        console.log('Disconnected from server');
-        updateConnectionStatus(false);
-        
-        // Try to reconnect
-        setTimeout(() => {
-          if (!isConnected) {
-            socket.connect();
-          }
-        }, 3000);
+        updateConnection(false);
+        showNotification('연결 끊김', 'warning');
+        setTimeout(() => !isConnected && socket.connect(), 3000);
       });
       
-      socket.on('status_update', (data) => {
-        updateStatusTable(data);
+      // Status events
+      socket.on('status_update', updateDataTable);
+      socket.on('control_status', data => updateControlStatus(data.active));
+      socket.on('robot_mode', data => updateModeStatus(data.mode));
+      socket.on('led_brightness', data => updateLEDStatus(data.level));
+      
+      // Voice events
+      socket.on('voice_status', data => {
+        updateVoiceStatus(data.status === 'ready');
+        addVoiceLog('🔧', data.message, data.status === 'error' ? 'error' : 'executed');
+      });
+      socket.on('voice_recognition', handleVoiceRecognition);
+      socket.on('voice_command', data => {
+        addVoiceLog('💬', data.command, 'executed');
+        showNotification(`음성 명령: ${data.command}`);
       });
       
-      socket.on('control_status', (data) => {
-        updateControlStatus(data.active);
-      });
-      
-      socket.on('robot_mode', (data) => {
-        updateModeStatus(data.mode);
-      });
-      
-      socket.on('system_status', (data) => {
-        console.log('System status:', data.status);
+      // System events
+      socket.on('system_status', data => {
         if (data.status === 'error') {
-          alert(`시스템 오류: ${data.message || '알 수 없는 오류'}`);
+          showNotification(`시스템 오류: ${data.message}`, 'error');
+        } else if (data.status === 'ready') {
+          showNotification('시스템 준비됨');
         }
       });
-    }
-    
-    function updateStatusTable(data) {
-      const row = document.getElementById('status-row');
       
-      row.innerHTML = `
-        <td>${data.camera1_tip_x ?? '-'}</td>
-        <td>${data.camera1_tip_y ?? '-'}</td>
-        <td>${data.camera2_tip_x ?? '-'}</td>
-        <td>${data.camera2_tip_y ?? '-'}</td>
-        <td>${data.follower_joint_1 ?? '-'}</td>
-        <td>${data.follower_joint_2 ?? '-'}</td>
-        <td>${data.follower_joint_3 ?? '-'}</td>
-        <td>${data.follower_joint_4 ?? '-'}</td>
-      `;
-    }
-
-    function setRobotMode(mode) {
-      if (!isConnected) {
-        alert('서버와 연결되어 있지 않습니다.');
-        return;
-      }
-      
-      socket.emit('set_robot_mode', { mode }, (response) => {
-        if (response.success) {
-          console.log(`로봇 모드가 ${mode}로 설정되었습니다`);
-        } else {
-          alert(`모드 설정 실패: ${response.error || '알 수 없는 오류'}`);
-        }
-      });
-    }
-
-    function updateControlStatus(active) {
-      controlActive = active;
-      const statusIndicator = document.querySelector('#controlStatus .status-indicator');
-      const controlStatusText = document.getElementById('controlStatus');
-      const controlBtn = document.getElementById('controlBtn');
-      
-      if (active) {
-        statusIndicator.classList.remove('status-off');
-        statusIndicator.classList.add('status-on');
-        controlStatusText.innerHTML = `
-          <span class="status-indicator status-on"></span>
-          로봇 제어: 활성화
-        `;
-        controlBtn.textContent = '로봇 제어 중지';
-        controlBtn.classList.remove('btn-green');
-        controlBtn.classList.add('btn-red');
-      } else {
-        statusIndicator.classList.remove('status-on');
-        statusIndicator.classList.add('status-off');
-        controlStatusText.innerHTML = `
-          <span class="status-indicator status-off"></span>
-          로봇 제어: 비활성화
-        `;
-        controlBtn.textContent = '로봇 제어 시작';
-        controlBtn.classList.remove('btn-red');
-        controlBtn.classList.add('btn-green');
-      }
-    }
-
-    function updateModeStatus(mode) {
-      currentMode = mode;
-      const statusIndicator = document.querySelector('#robotModeStatus .status-indicator');
-      const robotModeStatusText = document.getElementById('robotModeStatus');
-      
-      statusIndicator.classList.remove('status-off');
-      statusIndicator.classList.add('status-on');
-      
-      const modePosition = mode === 0 ? 110 : 1110;
-      robotModeStatusText.innerHTML = `
-        <span class="status-indicator status-on"></span>
-        현재 모드: ${mode} (위치 ${modePosition})
-      `;
-    }
-
-    function toggleControl() {
-      if (!isConnected) {
-        alert('서버와 연결되어 있지 않습니다.');
-        return;
-      }
-      
-      if (controlActive) {
-        // Stop control
-        socket.emit('stop_control', (response) => {
-          if (!response.success) {
-            alert('제어 중지 실패');
-          }
-        });
-      } else {
-        // Start control
-        socket.emit('start_control', (response) => {
-          if (!response.success) {
-            alert('제어 시작 실패');
-          }
-        });
-      }
-    }
-
-    window.onload = function() {
-      initializeSocket();
+      updateConnection(false);
     };
   </script>
 </body>

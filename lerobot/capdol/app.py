@@ -1,462 +1,284 @@
 #!/usr/bin/env python3
-import os, json, time, threading, logging, numpy as np, cv2, serial
-from flask import Flask, render_template, Response, jsonify, request
+import os, time, threading, logging, numpy as np, cv2, serial, csv
+from flask import Flask, render_template, Response
 from flask_socketio import SocketIO, emit
 import mediapipe as mp
-from lerobot.common.robot_devices.robots.configs import KochRobotConfig
-from lerobot.common.robot_devices.motors.utils import make_motors_buses_from_configs
+import pyaudio
+from six.moves import queue
+from google.cloud import speech
 
-# Suppress MediaPipe warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+# Configuration
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Paths and constants
-BASE_DIR = "lerobot/capdol"
-DATA_DIR = f"{BASE_DIR}/collected_data"
-MODEL_PATH = f"{BASE_DIR}/models/model_parameters_resnet.npz"
-BUTTON_POSITIONS = {0: 110, 1: 1110}  # Mode positions
-os.makedirs(DATA_DIR, exist_ok=True)
-
-# Updated device configurations
-PORT_ACM0 = "/dev/ttyACM0"
-PORT_ACM1 = "/dev/ttyACM1"
+# Constants
+MODEL_PATH = "lerobot/capdol/models/model_parameters_resnet.npz"
+BUTTON_POSITIONS = {0: 110, 1: 1110}
+PORTS = {"follower": "/dev/ttyACM0", "leader": "/dev/ttyACM1", "serial": "/dev/ttyACM2"}
 BAUDRATE = 1000000
-DYNAMIXEL_IDS_ACM0 = [1, 2, 3, 4]  # IDs on first port
-DYNAMIXEL_IDS_ACM1 = [1]           # ID on second port
+MOTOR_IDS = {"follower": [1, 2, 3, 4], "leader": [1]}
+CSV_FILE = "lerobot/capdol/robot_data_snapshots.csv"
+CSV_HEADERS = ["camera1_tip_x", "camera1_tip_y", "camera2_tip_x", "camera2_tip_y",
+               "follower_joint_1", "follower_joint_2", "follower_joint_3", "follower_joint_4"]
+
+# Voice Recognition
+RATE, CHUNK = 16000, int(16000 / 5)
+WAKE_WORDS = ["하이봇", "하이못", "아이봇", "AI봇"]
+COMMANDS = {"왼쪽": ["왼쪽", "왼"], "오른쪽": ["오른쪽", "오른"], "위": ["위", "위로"], "아래": ["아래", "아래로"], "종료": ["종료", "끝내"]}
 
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 mp_hands = mp.solutions.hands
-robot, controller = None, None
 
-class ManipulatorRobot:
-    def __init__(self, config=None):
-        # Instead of using the config object directly, we'll override with our specific settings
-        self.arms = {
-            'follower': {},  # Motors on ACM0 (4 motors)
-            'leader': {}     # Motor on ACM1 (1 motor)
-        }
-        
-        # Use dynamixel SDK directly for our specific configuration
+# Helper functions
+def DXL_LOBYTE(v): return v & 0xFF
+def DXL_HIBYTE(v): return (v >> 8) & 0xFF
+def DXL_LOWORD(v): return v & 0xFFFF
+def DXL_HIWORD(v): return (v >> 16) & 0xFFFF
+
+class MicrophoneStream:
+    def __init__(self, rate=RATE, chunk=CHUNK):
+        self._rate, self._chunk = rate, chunk
+        self._buff, self.closed = queue.Queue(), True
+
+    def __enter__(self):
+        self._audio_interface = pyaudio.PyAudio()
+        self._stream = self._audio_interface.open(
+            format=pyaudio.paInt16, channels=1, rate=self._rate, input=True,
+            frames_per_buffer=self._chunk, stream_callback=self._fill_buffer)
+        self.closed = False
+        return self
+
+    def __exit__(self, *args):
+        self._stream.stop_stream()
+        self._stream.close()
+        self.closed = True
+        self._buff.put(None)
+        self._audio_interface.terminate()
+
+    def _fill_buffer(self, in_data, *args):
+        self._buff.put(in_data)
+        return None, pyaudio.paContinue
+
+    def generator(self):
+        while not self.closed:
+            chunk = self._buff.get()
+            if chunk is None: return
+            data = [chunk]
+            while True:
+                try:
+                    chunk = self._buff.get(block=False)
+                    if chunk is None: return
+                    data.append(chunk)
+                except queue.Empty: break
+            yield b"".join(data)
+
+class RobotController:
+    def __init__(self, model_path=None):
+        self.setup_dynamixel()
+        self.load_model(model_path)
+        self.init_vision()
+        self.init_state()
+
+    def setup_dynamixel(self):
         try:
             from dynamixel_sdk import PortHandler, PacketHandler, GroupSyncWrite, GroupSyncRead
-            self.PortHandler = PortHandler
-            self.PacketHandler = PacketHandler
-            self.GroupSyncWrite = GroupSyncWrite
-            self.GroupSyncRead = GroupSyncRead
+            self.PortHandler, self.PacketHandler = PortHandler, PacketHandler
+            self.GroupSyncWrite, self.GroupSyncRead = GroupSyncWrite, GroupSyncRead
             
-            # Protocol version
-            self.PROTOCOL_VERSION = 2.0
+            self.ports = {k: self.PortHandler(v) for k, v in PORTS.items() if k != 'serial'}
+            self.handlers = {k: self.PacketHandler(2.0) for k in self.ports}
+            self.sync_writers, self.sync_readers = {}, {}
             
-            # Control table addresses (for Protocol 2.0)
-            self.ADDR_TORQUE_ENABLE = 64
-            self.ADDR_OPERATING_MODE = 11
-            self.ADDR_GOAL_POSITION = 116
-            self.ADDR_PRESENT_POSITION = 132
+            # Control table addresses
+            self.ADDR_TORQUE = 64
+            self.ADDR_GOAL_POS = 116
+            self.ADDR_PRESENT_POS = 132
+            self.ADDR_OP_MODE = 11
             self.ADDR_POSITION_P_GAIN = 84
             
-            # Torque values
-            self.TORQUE_ENABLE = 1
-            self.TORQUE_DISABLE = 0
-            
-            # Initialize port handlers
-            self.port_handlers = {
-                'follower': self.PortHandler(PORT_ACM0),
-                'leader': self.PortHandler(PORT_ACM1)
-            }
-            
-            # Initialize packet handlers
-            self.packet_handlers = {
-                'follower': self.PacketHandler(self.PROTOCOL_VERSION),
-                'leader': self.PacketHandler(self.PROTOCOL_VERSION)
-            }
-            
-            # Motor IDs for each arm
-            self.motor_ids = {
-                'follower': DYNAMIXEL_IDS_ACM0,
-                'leader': DYNAMIXEL_IDS_ACM1
-            }
-            
-            # Initialize GroupSyncWrite and GroupSyncRead instances
-            self.sync_writers = {}
-            self.sync_readers = {}
-            
-            from lerobot.common.robot_devices.motors.dynamixel import TorqueMode
-            self.TorqueMode = TorqueMode
         except ImportError as e:
             logger.error(f"Dynamixel SDK import error: {e}")
-            self.TorqueMode = None
-            
-        self.is_connected = False
+            self.ports = {}
+
+    def load_model(self, model_path):
+        self.params = None
+        if model_path and os.path.exists(model_path):
+            try:
+                params = np.load(model_path)
+                self.params = {k: params[k] for k in params.files}
+                logger.info("Model loaded successfully")
+            except Exception as e:
+                logger.error(f"Model load error: {e}")
+
+    def init_vision(self):
+        self.hands = [mp_hands.Hands(model_complexity=1, min_detection_confidence=0.1,
+                                   min_tracking_confidence=0.1, max_num_hands=2,
+                                   static_image_mode=False) for _ in range(2)]
+        # Warm up
+        dummy = np.zeros((100, 100, 3), dtype=np.uint8)
+        for hand in self.hands:
+            hand.process(dummy)
+
+    def init_state(self):
+        self.running = False
+        self.control_active = False
+        self.cams = [None, None]
+        self.serial_port = None
+        self.width, self.height = 640, 480
+        self.tip = [(0, 0), (0, 0)]
+        self.hand_detected = [False, False]
+        self.z = 10
+        self.data_lock = threading.Lock()
+        self.last_frames = [None, None]
+        self.last_data = [None] * 8
 
     def connect(self):
-        if self.is_connected: return True
-        try:
-            # Connect to ports and set baudrate
-            for arm_type, port_handler in self.port_handlers.items():
-                if not port_handler.openPort():
-                    logger.error(f"Failed to open port for {arm_type}")
-                    return False
-                
-                if not port_handler.setBaudRate(BAUDRATE):
-                    logger.error(f"Failed to set baudrate for {arm_type}")
-                    port_handler.closePort()
-                    return False
-                
-                logger.info(f"Connected '{arm_type}' on {port_handler.getPortName()}")
-                
-                # Initialize GroupSyncWrite instances for goal position
-                self.sync_writers[arm_type] = self.GroupSyncWrite(
-                    port_handler, 
-                    self.packet_handlers[arm_type], 
-                    self.ADDR_GOAL_POSITION, 
-                    4  # Data length for position
-                )
-                
-                # Initialize GroupSyncRead instances for present position
-                self.sync_readers[arm_type] = self.GroupSyncRead(
-                    port_handler,
-                    self.packet_handlers[arm_type],
-                    self.ADDR_PRESENT_POSITION,
-                    4  # Data length for position
-                )
-                
-                # Add parameters for sync read
-                for dxl_id in self.motor_ids[arm_type]:
-                    result = self.sync_readers[arm_type].addParam(dxl_id)
-                    if not result:
-                        logger.error(f"Failed to add parameter for Dynamixel ID {dxl_id}")
+        if not self.ports:
+            return False
             
-            self.is_connected = True
+        try:
+            for arm_type, port in self.ports.items():
+                if not port.openPort() or not port.setBaudRate(BAUDRATE):
+                    logger.error(f"Failed to connect {arm_type}")
+                    return False
+                
+                # Initialize sync instances
+                self.sync_writers[arm_type] = self.GroupSyncWrite(port, self.handlers[arm_type], self.ADDR_GOAL_POS, 4)
+                self.sync_readers[arm_type] = self.GroupSyncRead(port, self.handlers[arm_type], self.ADDR_PRESENT_POS, 4)
+                
+                # Add parameters
+                for motor_id in MOTOR_IDS[arm_type]:
+                    self.sync_readers[arm_type].addParam(motor_id)
+            
+            logger.info("Robot connected")
             return True
         except Exception as e:
             logger.error(f"Connection error: {e}")
-            self._cleanup_connections()
-            return False
-
-    def _cleanup_connections(self):
-        for arm_type, port_handler in self.port_handlers.items():
-            try:
-                port_handler.closePort()
-            except:
-                pass
-        self.is_connected = False
-
-    def disable_torque(self, arm_type='follower'):
-        if not self.is_connected: return False
-        try:
-            port_handler = self.port_handlers[arm_type]
-            packet_handler = self.packet_handlers[arm_type]
-            
-            for dxl_id in self.motor_ids[arm_type]:
-                packet_handler.write1ByteTxRx(
-                    port_handler, 
-                    dxl_id, 
-                    self.ADDR_TORQUE_ENABLE, 
-                    self.TORQUE_DISABLE
-                )
-            return True
-        except Exception as e:
-            logger.error(f"Torque disable error: {e}")
             return False
 
     def setup_control(self, arm_type='follower'):
-        if not self.is_connected: return False
-        try:
-            port_handler = self.port_handlers[arm_type]
-            packet_handler = self.packet_handlers[arm_type]
-            
-            for dxl_id in self.motor_ids[arm_type]:
-                # Disable torque to change operating mode
-                packet_handler.write1ByteTxRx(
-                    port_handler, 
-                    dxl_id, 
-                    self.ADDR_TORQUE_ENABLE, 
-                    self.TORQUE_DISABLE
-                )
-                
-                # Set operating mode (Position Control Mode)
-                packet_handler.write1ByteTxRx(
-                    port_handler, 
-                    dxl_id, 
-                    self.ADDR_OPERATING_MODE, 
-                    3
-                )
-                
-                # Enable torque
-                packet_handler.write1ByteTxRx(
-                    port_handler, 
-                    dxl_id, 
-                    self.ADDR_TORQUE_ENABLE, 
-                    self.TORQUE_ENABLE
-                )
-                
-                # Set Position P Gain
-                packet_handler.write2ByteTxRx(
-                    port_handler, 
-                    dxl_id, 
-                    self.ADDR_POSITION_P_GAIN, 
-                    200
-                )
-            return True
-        except Exception as e:
-            logger.error(f"Control setup error: {e}")
+        if arm_type not in self.ports:
             return False
+            
+        port, handler = self.ports[arm_type], self.handlers[arm_type]
+        
+        for motor_id in MOTOR_IDS[arm_type]:
+            # Disable torque, set mode, enable torque
+            handler.write1ByteTxRx(port, motor_id, self.ADDR_TORQUE, 0)
+            handler.write1ByteTxRx(port, motor_id, self.ADDR_OP_MODE, 3)
+            handler.write2ByteTxRx(port, motor_id, self.ADDR_POSITION_P_GAIN, 100)
+            handler.write1ByteTxRx(port, motor_id, self.ADDR_TORQUE, 1)
+        return True
 
-    def move(self, positions, arm_type='follower'):
-        if not self.is_connected: return False
+    def move_joints(self, positions, arm_type='follower'):
+        if arm_type not in self.sync_writers:
+            return False
+            
         try:
-            port_handler = self.port_handlers[arm_type]
-            packet_handler = self.packet_handlers[arm_type]
-            sync_writer = self.sync_writers[arm_type]
+            writer = self.sync_writers[arm_type]
+            writer.clearParam()
             
-            # Clear sync write parameter storage
-            sync_writer.clearParam()
-            
-            # Add parameters for all motors
-            for i, dxl_id in enumerate(self.motor_ids[arm_type]):
+            for i, motor_id in enumerate(MOTOR_IDS[arm_type]):
                 if i < len(positions):
-                    position = int(positions[i])
-                    # Allocate goal position value into byte array
-                    param_goal_position = [
-                        DXL_LOBYTE(DXL_LOWORD(position)),
-                        DXL_HIBYTE(DXL_LOWORD(position)),
-                        DXL_LOBYTE(DXL_HIWORD(position)),
-                        DXL_HIBYTE(DXL_HIWORD(position))
-                    ]
-                    # Add parameter for sync write
-                    sync_writer.addParam(dxl_id, param_goal_position)
+                    pos = int(positions[i])
+                    param = [DXL_LOBYTE(DXL_LOWORD(pos)), DXL_HIBYTE(DXL_LOWORD(pos)),
+                            DXL_LOBYTE(DXL_HIWORD(pos)), DXL_HIBYTE(DXL_HIWORD(pos))]
+                    writer.addParam(motor_id, param)
             
-            # Sync write goal position
-            sync_writer.txPacket()
+            writer.txPacket()
             return True
         except Exception as e:
             logger.error(f"Move error: {e}")
             return False
 
-    def set_joint_position(self, joint_index, position, arm_type='leader'):
-        if not self.is_connected: return False
-        if joint_index >= len(self.motor_ids[arm_type]):
-            logger.error(f"Invalid joint index: {joint_index}")
-            return False
-            
-        try:
-            port_handler = self.port_handlers[arm_type]
-            packet_handler = self.packet_handlers[arm_type]
-            dxl_id = self.motor_ids[arm_type][joint_index]
-            
-            # Write goal position directly
-            dxl_comm_result, dxl_error = packet_handler.write4ByteTxRx(
-                port_handler,
-                dxl_id,
-                self.ADDR_GOAL_POSITION,
-                position
-            )
-            
-            if dxl_comm_result != 0:
-                logger.error(f"Communication error: {packet_handler.getTxRxResult(dxl_comm_result)}")
-                return False
-            elif dxl_error != 0:
-                logger.error(f"Dynamixel error: {packet_handler.getRxPacketError(dxl_error)}")
-                return False
-                
-            logger.info(f"Joint {joint_index} moved to {position}")
-            return True
-        except Exception as e:
-            logger.error(f"Joint position error: {e}")
-            return False
-
     def get_positions(self, arm_type='follower'):
-        if not self.is_connected: 
-            return [None] * len(self.motor_ids[arm_type])
+        if arm_type not in self.sync_readers:
+            return [None] * len(MOTOR_IDS[arm_type])
             
         try:
-            port_handler = self.port_handlers[arm_type]
-            packet_handler = self.packet_handlers[arm_type]
-            sync_reader = self.sync_readers[arm_type]
-            
-            # Sync read present position
-            dxl_comm_result = sync_reader.txRxPacket()
-            if dxl_comm_result != 0:
-                logger.error(f"Communication error: {packet_handler.getTxRxResult(dxl_comm_result)}")
-                return [None] * len(self.motor_ids[arm_type])
+            reader = self.sync_readers[arm_type]
+            if reader.txRxPacket() != 0:
+                return [None] * len(MOTOR_IDS[arm_type])
             
             positions = []
-            for dxl_id in self.motor_ids[arm_type]:
-                # Check if data is available
-                if sync_reader.isAvailable(dxl_id, self.ADDR_PRESENT_POSITION, 4):
-                    # Get present position value
-                    position = sync_reader.getData(dxl_id, self.ADDR_PRESENT_POSITION, 4)
-                    positions.append(position)
+            for motor_id in MOTOR_IDS[arm_type]:
+                if reader.isAvailable(motor_id, self.ADDR_PRESENT_POS, 4):
+                    positions.append(reader.getData(motor_id, self.ADDR_PRESENT_POS, 4))
                 else:
-                    logger.error(f"Sync read failed for Dynamixel ID {dxl_id}")
                     positions.append(None)
-            
             return positions
-        except Exception as e:
-            logger.error(f"Position read error: {e}")
-            return [None] * len(self.motor_ids[arm_type])
+        except:
+            return [None] * len(MOTOR_IDS[arm_type])
 
-    def disconnect(self):
-        if not self.is_connected: return
-        
-        for arm_type in self.port_handlers:
-            try:
-                # Disable torque for all motors
-                self.disable_torque(arm_type)
-                # Close port
-                self.port_handlers[arm_type].closePort()
-            except Exception as e:
-                logger.error(f"Disconnect error for {arm_type}: {e}")
-                
-        self.is_connected = False
-        logger.info("Robot disconnected")
-
-# Helper functions for byte manipulation (from Dynamixel SDK)
-def DXL_LOBYTE(value):
-    return value & 0xFF
-
-def DXL_HIBYTE(value):
-    return (value >> 8) & 0xFF
-
-def DXL_LOWORD(value):
-    return value & 0xFFFF
-
-def DXL_HIWORD(value):
-    return (value >> 16) & 0xFFFF
-
-class RobotController:
-    def __init__(self, robot, model_path=None, arm_type='follower'):
-        self.robot = robot
-        self.arm_type = arm_type
-        self.cams = [None, None]
-        self.width, self.height = 640, 480
-        self.running = False
-        self.control_active = False
-        self.data_lock = threading.Lock()
-        self.last_frames = [None, None]
-        self.last_data = [None] * 8
-        self.tip = [(0,0), (0,0)]
-        self.hand_detected = [False, False]
-        self.z = 10
-        self.serial_port = None
-        self.last_status_update = 0
-        self.status_update_interval = 0.1  # 100ms
-        
-        # Load model
-        self.params = None
-        if model_path:
-            try:
-                params = np.load(model_path)
-                self.params = {k: params[k] for k in params.files}
-                logger.info("Model loaded")
-            except Exception as e:
-                logger.error(f"Model load error: {e}")
-        
-        # Initialize MediaPipe
-        self.hands = [mp_hands.Hands(
-            model_complexity=1, 
-            min_detection_confidence=0.1,
-            min_tracking_confidence=0.1, 
-            max_num_hands=2,
-            static_image_mode=False
-        ) for _ in range(2)]
-        
-        # Warm up models with dummy image
-        dummy = np.zeros((100, 100, 3), dtype=np.uint8)
-        for hand in self.hands:
-            hand.process(dummy)
-
-    def start(self, cam_ids=(0, 2), serial_port='/dev/ttyUSB0'):
-        if self.running: return True
-        
-        if not self._open_cams(cam_ids): return False
-        
-        try:
-            self.serial_port = serial.Serial(serial_port, 9600, timeout=1)
-            time.sleep(2)
-            logger.info(f"Serial port connected")
-        except Exception as e:
-            logger.error(f"Serial port error: {e}")
-            self._cleanup_cameras()
+    def set_joint_position(self, joint_idx, position, arm_type='leader'):
+        if arm_type not in self.ports or joint_idx >= len(MOTOR_IDS[arm_type]):
             return False
+            
+        try:
+            port, handler = self.ports[arm_type], self.handlers[arm_type]
+            motor_id = MOTOR_IDS[arm_type][joint_idx]
+            result, error = handler.write4ByteTxRx(port, motor_id, self.ADDR_GOAL_POS, position)
+            return result == 0 and error == 0
+        except:
+            return False
+
+    def predict_positions(self, x, y, z):
+        if not self.params:
+            return np.zeros(4)
+            
+        A = np.array([[x], [y], [z]]) / 700.0
+        L = len(self.params) // 2
         
+        for l in range(1, L):
+            A = np.maximum(0, self.params[f'W{l}'] @ A + self.params[f'b{l}'])
+        
+        return ((self.params[f'W{L}'] @ A + self.params[f'b{L}']) * 4100).flatten()
+
+    def start(self, cam_ids=(0, 2)):
+        if self.running:
+            return True
+            
+        if not self._open_cameras(cam_ids) or not self._open_serial():
+            return False
+            
         self.running = True
-        threading.Thread(target=self._process_loop, daemon=True).start()
-        threading.Thread(target=self._serial_listener, daemon=True).start()
-        logger.info("Controller started")
-        socketio.emit('system_status', {'status': 'ready'})
+        threading.Thread(target=self._main_loop, daemon=True).start()
+        threading.Thread(target=self._serial_loop, daemon=True).start()
         return True
 
-    def start_control(self):
-        if not self.running or self.control_active: return False
-        success = self.robot.setup_control(self.arm_type)
-        if success:
-            self.control_active = True
-            logger.info("Robot control activated")
-            socketio.emit('control_status', {'active': True})
-        return success
-
-    def stop_control(self):
-        if self.control_active:
-            self.control_active = False
-            self.robot.disable_torque(self.arm_type)
-            logger.info("Robot control deactivated")
-            socketio.emit('control_status', {'active': False})
-        return True
-
-    def _serial_listener(self):
-        logger.info("Serial listener started")
-        while self.running and self.serial_port:
+    def _open_cameras(self, cam_ids):
+        for i, cam_id in enumerate(cam_ids):
             try:
-                if self.serial_port.in_waiting > 0:
-                    line = self.serial_port.readline().decode('utf-8').strip()
-                    if line.startswith("CMD:ROBOT:"):
-                        mode = int(line.split(":")[-1])
-                        position = BUTTON_POSITIONS.get(mode)
-                        if position is not None:
-                            self.robot.set_joint_position(0, position, 'leader')
-                            logger.info(f"Button mode {mode}: moved to {position}")
-                            socketio.emit('robot_mode', {'mode': mode, 'position': position})
-                time.sleep(0.1)
-            except Exception as e:
-                logger.error(f"Serial error: {e}")
-                time.sleep(1)
-
-    def _open_cams(self, cam_ids):
-        for i, cid in enumerate(cam_ids):
-            try:
-                cap = cv2.VideoCapture(cid)
+                cap = cv2.VideoCapture(cam_id)
                 if not cap.isOpened():
-                    logger.error(f"Camera {i+1} open failed")
                     return False
                 cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
                 self.cams[i] = cap
-                logger.info(f"Camera {i+1} ready")
-            except Exception as e:
-                logger.error(f"Camera error: {e}")
+            except:
                 return False
         return True
 
-    def _predict(self, x, y, z):
-        if not self.params: return np.zeros(4)
-        A = np.array([[x],[y],[z]])/700.0
-        L = len(self.params)//2
-        for l in range(1, L):
-            A = np.maximum(0, self.params[f'W{l}'] @ A + self.params[f'b{l}'])
-        return ((self.params[f'W{L}'] @ A + self.params[f'b{L}']) * 4100).flatten()
+    def _open_serial(self):
+        try:
+            self.serial_port = serial.Serial(PORTS['serial'], 9600, timeout=1)
+            time.sleep(3)  # Arduino boot wait
+            self.serial_port.reset_input_buffer()
+            return True
+        except:
+            return False
 
     def _process_frame(self, idx):
         if not self.cams[idx]:
             return self._create_dummy_frame(f"Camera {idx+1} not ready")
             
+        # Flush buffer and get latest frame
         frame = None
-        for _ in range(4):  # Flush buffer
+        for _ in range(1):
             ret, f = self.cams[idx].read()
-            if ret: frame = f
+            if ret:
+                frame = f
                 
         if frame is None:
             return self._create_dummy_frame("No frame")
@@ -474,7 +296,7 @@ class RobotController:
                 self.tip[idx] = (x, y)
                 self.hand_detected[idx] = True
                 
-                if idx == 1:  # Z coordinate from second camera
+                if idx == 1:  # Z from second camera
                     self.z = y
                     
                 cv2.circle(frame, (x, y), 10, (0, 0, 255), -1)
@@ -488,70 +310,62 @@ class RobotController:
         cv2.putText(frame, message, (70, 240), 1, 2, (255, 255, 255), 2)
         return frame
 
-    def _process_loop(self):
+    def _main_loop(self):
         while self.running:
             try:
+                # Process frames
                 frames = [self._process_frame(i) for i in range(2)]
-                positions = self.robot.get_positions(self.arm_type)
+                positions = self.get_positions('follower')
                 
+                # Control robot if active and hand detected
                 if self.control_active and self.hand_detected[0]:
-                    joints = self._predict(*self.tip[0], self.z).round().astype(int)
+                    joints = self.predict_positions(*self.tip[0], self.z).round().astype(int)
                     if np.sum(np.abs(joints)) > 0:
-                        self.robot.move(joints, self.arm_type)
+                        self.move_joints(joints, 'follower')
                 
+                # Update shared data
                 with self.data_lock:
                     self.last_frames = frames
                     self.last_data = [
-                        self.tip[0][0] if self.hand_detected[0] else None, 
+                        self.tip[0][0] if self.hand_detected[0] else None,
                         self.tip[0][1] if self.hand_detected[0] else None,
-                        self.tip[1][0] if self.hand_detected[1] else None, 
+                        self.tip[1][0] if self.hand_detected[1] else None,
                         self.tip[1][1] if self.hand_detected[1] else None
                     ] + positions
                 
-                # Emit status updates at controlled intervals
-                current_time = time.time()
-                if current_time - self.last_status_update >= self.status_update_interval:
-                    self._emit_status_update()
-                    self.last_status_update = current_time
-                    
+                # Emit status
+                self._emit_status()
                 time.sleep(0.01)
-            except Exception as e:
-                logger.error(f"Processing error: {e}")
-                time.sleep(0.1)
-        self._cleanup()
-
-    def _emit_status_update(self):
-        data = self.get_last_data()
-        safe_data = []
-        for v in data:
-            if v is None:
-                safe_data.append(None)
-            elif isinstance(v, np.generic):
-                safe_data.append(v.item())
-            else:
-                safe_data.append(int(v) if isinstance(v, (int, float)) else v)
                 
-        headers = ["camera1_tip_x", "camera1_tip_y", "camera2_tip_x", "camera2_tip_y",
-                 "follower_joint_1", "follower_joint_2", "follower_joint_3", "follower_joint_4"]
-                 
-        socketio.emit('status_update', dict(zip(headers, safe_data)))
+            except Exception as e:
+                logger.error(f"Main loop error: {e}")
+                time.sleep(0.1)
 
-    def _cleanup(self):
-        self._cleanup_cameras()
-        if self.serial_port and self.serial_port.is_open:
-            try: self.serial_port.close()
-            except: pass
-            self.serial_port = None
+    def _serial_loop(self):
+        while self.running and self.serial_port:
+            try:
+                if self.serial_port.in_waiting > 0:
+                    line = self.serial_port.readline().decode('utf-8', errors='ignore').strip()
+                    
+                    if line.startswith("CMD:ROBOT:"):
+                        mode = int(line.split(":")[-1])
+                        position = BUTTON_POSITIONS.get(mode)
+                        if position and self.set_joint_position(0, position, 'leader'):
+                            socketio.emit('robot_mode', {'mode': mode, 'position': position})
+                    
+                    elif line.startswith("CMD:LED:"):
+                        brightness = int(line.split(":")[-1])
+                        socketio.emit('led_brightness', {'level': brightness})
+                
+                time.sleep(0.1)
+            except Exception as e:
+                logger.error(f"Serial error: {e}")
+                time.sleep(1)
 
-    def _cleanup_cameras(self):
-        for hand in self.hands:
-            try: hand.close()
-            except: pass
-        for i, cam in enumerate(self.cams):
-            if cam:
-                try: cam.release()
-                except: pass
-        self.cams = [None, None]
+    def _emit_status(self):
+        data = self.get_last_data()
+        safe_data = [v.item() if isinstance(v, np.generic) else v for v in data]
+        socketio.emit('status_update', dict(zip(CSV_HEADERS, safe_data)))
 
     def get_last_frame(self, idx):
         with self.data_lock:
@@ -562,12 +376,160 @@ class RobotController:
         with self.data_lock:
             return self.last_data.copy()
 
-    def stop(self):
-        if not self.running: return
+    def start_control(self):
+        if self.control_active:
+            return False
+        success = self.setup_control('follower')
+        if success:
+            self.control_active = True
+            socketio.emit('control_status', {'active': True})
+        return success
+
+    def stop_control(self):
+        if self.control_active:
+            self.control_active = False
+            # Disable torque
+            if 'follower' in self.ports:
+                for motor_id in MOTOR_IDS['follower']:
+                    self.handlers['follower'].write1ByteTxRx(
+                        self.ports['follower'], motor_id, self.ADDR_TORQUE, 0)
+            socketio.emit('control_status', {'active': False})
+        return True
+
+    def disconnect(self):
         self.running = False
         self.control_active = False
+        
+        # Close cameras
+        for cam in self.cams:
+            if cam:
+                cam.release()
+        
+        # Close serial
+        if self.serial_port:
+            self.serial_port.close()
+        
+        # Close robot ports
+        for port in self.ports.values():
+            try:
+                port.closePort()
+            except:
+                pass
 
-# Flask routes
+# Global controller instance
+controller = None
+voice_running = False
+
+# Voice Recognition
+def create_speech_stream(is_command_mode=False):
+    client = speech.SpeechClient()
+    config = speech.RecognitionConfig(
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=RATE, language_code="ko-KR",
+        speech_contexts=[speech.SpeechContext(
+            phrases=WAKE_WORDS + sum(COMMANDS.values(), []), boost=20.0)],
+        model="command_and_search")
+    
+    streaming_config = speech.StreamingRecognitionConfig(
+        config=config, interim_results=True, single_utterance=is_command_mode)
+    
+    stream = MicrophoneStream()
+    stream.__enter__()
+    requests = (speech.StreamingRecognizeRequest(audio_content=chunk) 
+               for chunk in stream.generator())
+    responses = client.streaming_recognize(streaming_config, requests)
+    return stream, responses
+
+def process_voice_command(cmd):
+    if not controller or not controller.running:
+        return
+        
+    logger.info(f"Processing voice command: {cmd}")
+    socketio.emit('voice_command', {'command': cmd})
+    
+    if not controller.control_active:
+        return
+        
+    positions = controller.get_positions('follower')
+    if not positions[0]:
+        return
+        
+    # Simple movement commands
+    moves = {
+        "왼쪽": [positions[0] - 500] + positions[1:],
+        "오른쪽": [positions[0] + 500] + positions[1:],
+        "위": [positions[0], positions[1] + 500] + positions[2:] if len(positions) > 1 else positions,
+        "아래": [positions[0], positions[1] - 500] + positions[2:] if len(positions) > 1 else positions
+    }
+    
+    if cmd in moves:
+        controller.move_joints(moves[cmd], 'follower')
+
+def voice_recognition_loop():
+    global voice_running
+    voice_running = True
+    socketio.emit('voice_status', {'status': 'ready', 'message': '웨이크워드를 말해주세요'})
+
+    while voice_running:
+        try:
+            stream, responses = create_speech_stream()
+
+            for response in responses:
+                if not response.results:
+                    continue
+
+                result = response.results[0]
+                if not result.alternatives:
+                    continue
+
+                transcript = result.alternatives[0].transcript.strip()
+                
+                # Check for wake word
+                if any(wake in transcript for wake in WAKE_WORDS):
+                    if result.is_final or result.stability > 0.8:
+                        socketio.emit('voice_recognition', {'text': '명령을 말씀하세요', 'type': 'wake_word'})
+                        stream.__exit__(None, None, None)
+                        
+                        # Command mode
+                        cmd_stream, cmd_responses = create_speech_stream(is_command_mode=True)
+                        start_time = time.time()
+                        
+                        for cmd_response in cmd_responses:
+                            if time.time() - start_time > 5:  # Timeout
+                                break
+                                
+                            if not cmd_response.results:
+                                continue
+                                
+                            cmd_result = cmd_response.results[0]
+                            if not cmd_result.alternatives:
+                                continue
+
+                            cmd_transcript = cmd_result.alternatives[0].transcript.strip()
+                            
+                            for cmd, variations in COMMANDS.items():
+                                if any(v in cmd_transcript for v in variations):
+                                    if cmd == "종료":
+                                        voice_running = False
+                                        cmd_stream.__exit__(None, None, None)
+                                        return
+                                    else:
+                                        process_voice_command(cmd)
+                                    cmd_stream.__exit__(None, None, None)
+                                    break
+                            break
+                        break
+                        
+            try:
+                stream.__exit__(None, None, None)
+            except:
+                pass
+                
+        except Exception as e:
+            logger.error(f"Voice recognition error: {e}")
+            time.sleep(2)
+
+# Flask Routes
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -594,13 +556,12 @@ def generate_frames(cam_idx):
             
             if not controller or not controller.running:
                 time.sleep(0.5)
-        except Exception:
+        except:
             time.sleep(0.5)
 
-# WebSocket routes and event handlers
+# WebSocket Handlers
 @socketio.on('connect')
 def handle_connect():
-    logger.info('Client connected')
     if controller and controller.running:
         socketio.emit('system_status', {'status': 'ready'})
         socketio.emit('control_status', {'active': controller.control_active})
@@ -608,78 +569,127 @@ def handle_connect():
         socketio.emit('system_status', {'status': 'initializing'})
 
 @socketio.on('start_control')
-def handle_start_control():
-    if not controller or not controller.running:
-        return {'success': False, 'error': 'System not ready'}
-    return {'success': controller.start_control()}
+def handle_start_control(data=None):
+    return {'success': controller.start_control() if controller else False}
 
 @socketio.on('stop_control')
-def handle_stop_control():
-    if not controller or not controller.running:
-        return {'success': False, 'error': 'System not ready'}
-    return {'success': controller.stop_control()}
+def handle_stop_control(data=None):
+    return {'success': controller.stop_control() if controller else False}
 
 @socketio.on('set_robot_mode')
 def handle_set_robot_mode(data):
-    if not controller or not controller.running:
-        return {'success': False, 'error': 'System not ready'}
-    
+    if not controller:
+        return {'success': False}
     mode = data.get('mode', 0)
     position = BUTTON_POSITIONS.get(mode)
-    
-    if position is None:
-        return {'success': False, 'error': f'Invalid mode: {mode}'}
-    
-    success = robot.set_joint_position(0, position, 'leader')
-    return {'success': success, 'mode': mode, 'position': position}
+    if position:
+        success = controller.set_joint_position(0, position, 'leader')
+        return {'success': success, 'mode': mode, 'position': position}
+    return {'success': False}
 
-def init_system(model_path=MODEL_PATH, cam_ids=(0, 2), serial_port='/dev/ttyUSB0'):
-    global robot, controller
+@socketio.on('take_snapshot')
+def handle_take_snapshot(data=None):
+    if not controller:
+        return {'success': False}
+    
     try:
-        # Initialize the robot with our specific configuration
-        robot = ManipulatorRobot()
-        if not robot.connect():
-            logger.error("Robot connection failed")
+        snapshot_data = controller.get_last_data()
+        file_exists = os.path.exists(CSV_FILE)
+        
+        with open(CSV_FILE, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(CSV_HEADERS)
+            writer.writerow(snapshot_data)
+        
+        return {'success': True, 'data': dict(zip(CSV_HEADERS, snapshot_data))}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+@socketio.on('get_csv_info')
+def handle_get_csv_info(data=None):
+    try:
+        if os.path.exists(CSV_FILE):
+            file_size = os.path.getsize(CSV_FILE)
+            with open(CSV_FILE, 'r') as f:
+                row_count = sum(1 for row in csv.reader(f)) - 1  # Exclude header
+            return {'success': True, 'exists': True, 'file_path': CSV_FILE, 
+                   'file_size': file_size, 'row_count': row_count}
+        else:
+            return {'success': True, 'exists': False}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+@socketio.on('clear_csv')
+def handle_clear_csv(data=None):
+    try:
+        if os.path.exists(CSV_FILE):
+            os.remove(CSV_FILE)
+        return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+@socketio.on('send_serial_command')
+def handle_send_serial_command(data):
+    if not controller or not controller.serial_port:
+        return {'success': False, 'error': 'Serial port not ready'}
+    
+    command = data.get('command', '')
+    try:
+        controller.serial_port.write(f"{command}\n".encode('utf-8'))
+        return {'success': True}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+@socketio.on('start_voice_recognition')
+def handle_start_voice(data=None):
+    global voice_running
+    if voice_running:
+        return {'success': False, 'message': '이미 실행 중'}
+    threading.Thread(target=voice_recognition_loop, daemon=True).start()
+    return {'success': True}
+
+@socketio.on('stop_voice_recognition')
+def handle_stop_voice(data=None):
+    global voice_running
+    voice_running = False
+    return {'success': True}
+
+def init_system():
+    global controller
+    try:
+        controller = RobotController(MODEL_PATH)
+        if not controller.connect():
             socketio.emit('system_status', {'status': 'error', 'message': 'Robot connection failed'})
             return False
         
-        # Setup initial torque and control modes
-        robot.disable_torque('follower')
-        robot.setup_control('leader')
+        controller.setup_control('leader')
         
-        controller = RobotController(robot, model_path, 'follower')
-        if not controller.start(cam_ids, serial_port):
-            logger.error("Controller start failed")
-            robot.disconnect()
+        if not controller.start():
+            controller.disconnect()
             socketio.emit('system_status', {'status': 'error', 'message': 'Controller start failed'})
             return False
             
-        logger.info("=== System ready ===")
         socketio.emit('system_status', {'status': 'ready'})
         return True
     except Exception as e:
-        logger.error(f"Initialization error: {e}")
         socketio.emit('system_status', {'status': 'error', 'message': str(e)})
         return False
 
-def cleanup_system():
+def cleanup():
+    global voice_running
+    voice_running = False
     if controller:
-        try: controller.stop()
-        except: pass
-    if robot:
-        try: robot.disconnect()
-        except: pass
-    logger.info("System shutdown")
+        controller.disconnect()
 
 def main():
     threading.Thread(target=init_system, daemon=True).start()
-    
     try:
         socketio.run(app, host="0.0.0.0", port=5000, debug=False)
     except KeyboardInterrupt:
-        logger.info("User interrupt")
+        pass
     finally:
-        cleanup_system()
+        cleanup()
 
 if __name__ == "__main__":
     main()
