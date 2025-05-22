@@ -174,3 +174,4 @@ cython_debug/
 *.json
 lerobot/capdol/*.json
 lerobot/capdol/*.json
+lerobot/capdol/*.json
