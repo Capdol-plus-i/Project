@@ -27,11 +27,10 @@ def process_robot_hand_data(input_csv_path, output_npz_path):
     
     print(f"원본 데이터 행 수: {len(df)}")
     print(f"원본 데이터 열: {df.columns.tolist()}")
-    
     # 2. 필요한 7개 컬럼만 선택
     needed_columns = [
         'camera1_tip_x', 'camera1_tip_y', 'camera2_tip_y',
-        'follower_joint_1', 'follower_joint_2', 'follower_joint_3', 'follower_joint_4'
+        'joint_1', 'joint_2', 'joint_3', 'joint_4'
     ]
     
     # 필요한 열이 모두 존재하는지 확인
@@ -72,7 +71,7 @@ def process_robot_hand_data(input_csv_path, output_npz_path):
 # 메인 함수
 if __name__ == "__main__":
     # 파일 경로 설정
-    input_csv_path = "lerobot/capdol/collected_data/robot_hand_data.csv"  # 입력 CSV 파일 경로
+    input_csv_path = "lerobot/capdol/robot_snapshots.csv"  # 입력 CSV 파일 경로
     output_npz_path = "lerobot/capdol/robot_hand_data.npz"                # 출력 NPZ 파일 경로
     
     # 데이터 처리 및 저장

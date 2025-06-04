@@ -1,435 +1,1398 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>로봇 핸드 컨트롤러</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: Arial, sans-serif; background: #181818; color: #eee; padding: 20px; }
-    
-    /* Layout */
-    .header { text-align: center; margin-bottom: 30px; }
-    .header h1 { color: #ffa500; margin-bottom: 10px; }
-    .header .subtitle { color: #ccc; font-size: 1.1em; }
-    
-    .container { max-width: 1400px; margin: 0 auto; }
-    .grid { display: grid; gap: 20px; }
-    .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
-    .grid-4 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
-    
-    /* Components */
-    .card { background: #222; border-radius: 16px; padding: 20px; border: 2px solid #444; }
-    .card-title { color: #ffa500; margin-bottom: 15px; font-size: 1.4em; }
-    .card-subtitle { color: #ccc; margin-bottom: 15px; font-size: 0.95em; }
-    
-    .btn { padding: 10px 20px; font-size: 1em; margin: 5px; background: #ffa500; 
-           border: none; border-radius: 8px; color: #222; font-weight: bold; 
-           cursor: pointer; transition: all 0.3s; min-width: 100px; }
-    .btn:hover { transform: translateY(-2px); }
-    .btn:disabled { background: #666; color: #999; cursor: not-allowed; transform: none; }
-    
-    /* Button variants */
-    .btn-green { background: #4caf50; } .btn-green:hover { background: #81c784; }
-    .btn-red { background: #f44336; } .btn-red:hover { background: #e57373; }
-    .btn-blue { background: #2196f3; } .btn-blue:hover { background: #64b5f6; }
-    .btn-purple { background: #9c27b0; } .btn-purple:hover { background: #ba68c8; }
-    .btn-orange { background: #ff9800; } .btn-orange:hover { background: #ffb74d; }
-    
-    /* Camera */
-    .camera-grid { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
-    .camera-box { border: 2px solid #ffa500; border-radius: 16px; padding: 8px; background: #222; }
-    .camera-title { margin-bottom: 8px; color: #ffa500; font-weight: bold; text-align: center; }
-    .camera-box img { max-width: 100%; height: auto; }
-    
-    /* Status */
-    .status-bar { position: fixed; top: 10px; right: 10px; padding: 8px 15px; 
-                  border-radius: 5px; font-size: 0.9em; z-index: 1000; }
-    .status-connected { background: #4caf50; }
-    .status-disconnected { background: #f44336; }
-    
-    .status-grid { display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; margin: 20px 0; }
-    .status-item { background: #333; padding: 12px 16px; border-radius: 8px; 
-                   border: 1px solid #444; min-width: 160px; text-align: center; }
-    
-    .indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; 
-                 margin-right: 6px; background: #666; }
-    .indicator.on { background: #4caf50; }
-    .indicator.off { background: #f44336; }
-    .indicator.warning { background: #ff9800; }
-    .indicator.pulse { animation: pulse 2s infinite; }
-    
-    @keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
-    
-    /* Data table */
-    .data-table { width: 100%; border-collapse: collapse; background: #222; 
-                  border-radius: 10px; overflow: hidden; margin: 20px 0; }
-    .data-table th, .data-table td { padding: 8px 12px; border: 1px solid #444; text-align: center; }
-    .data-table th { background: #333; color: #ffa500; }
-    .data-table td { background: #262626; }
-    
-    /* Voice log */
-    .voice-log { height: 200px; overflow-y: auto; padding: 12px; background: #262626; 
-                 border-radius: 8px; font-family: monospace; font-size: 0.9em; 
-                 border: 1px solid #444; }
-    .voice-entry { margin: 6px 0; padding: 4px; border-radius: 4px; }
-    .voice-listening { color: #64b5f6; }
-    .voice-wake-word { color: #4caf50; font-weight: bold; }
-    .voice-command { color: #ba68c8; font-weight: bold; }
-    .voice-executed { color: #ffa500; font-weight: bold; }
-    .voice-timeout { color: #ff9800; }
-    .voice-error { color: #f44336; font-weight: bold; }
-    
-    /* Notification */
-    .notification { position: fixed; top: 60px; right: 10px; padding: 10px 15px; 
-                    border-radius: 5px; color: white; z-index: 1000; opacity: 0; transition: opacity 0.3s; }
-    .notification.show { opacity: 1; }
-    .notification.success { background: #4caf50; }
-    .notification.error { background: #f44336; }
-    .notification.warning { background: #ff9800; }
-    
-    /* CSV Info */
-    .csv-info { background: #333; border-radius: 8px; padding: 15px; margin-top: 15px; 
-                font-family: monospace; display: none; }
-    .csv-info div { margin: 6px 0; }
-    
-    /* Responsive */
-    @media (max-width: 768px) {
-      .camera-grid { flex-direction: column; align-items: center; }
-      .status-grid { flex-direction: column; align-items: center; }
-      .grid { grid-template-columns: 1fr; }
-      .btn { width: 100%; margin: 5px 0; }
-    }
-  </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Arm Control System</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .video-section {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .video-container {
+            text-align: center;
+            position: relative;
+        }
+
+        .video-container h3 {
+            margin-bottom: 15px;
+            font-size: 1.3em;
+            color: #FFD700;
+        }
+
+        .video-frame {
+            width: 100%;
+            max-width: 640px;
+            height: auto;
+            border-radius: 10px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            transition: border-color 0.3s ease;
+        }
+
+        .video-frame:hover {
+            border-color: #FFD700;
+        }
+
+        .status-indicator {
+            position: absolute;
+            top: 50px;
+            right: 20px;
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-indicator.active {
+            background: #44ff44;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .control-panel {
+            text-align: center;
+        }
+
+        .control-panel h3 {
+            margin-bottom: 20px;
+            color: #FFD700;
+            font-size: 1.3em;
+        }
+
+        .button {
+            background: linear-gradient(145deg, #4CAF50, #45a049);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            margin: 10px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        .button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        .button:active {
+            transform: translateY(0);
+        }
+
+        .button.stop {
+            background: linear-gradient(145deg, #f44336, #da190b);
+        }
+
+        .button.mode {
+            background: linear-gradient(145deg, #2196F3, #1976D2);
+            padding: 10px 20px;
+            font-size: 14px;
+        }
+
+        .button.arduino {
+            background: linear-gradient(145deg, #FF9800, #F57C00);
+            padding: 8px 16px;
+            font-size: 12px;
+            margin: 5px;
+        }
+
+        .button.led-effect {
+            background: linear-gradient(145deg, #9C27B0, #7B1FA2);
+            padding: 8px 16px;
+            font-size: 12px;
+            margin: 5px;
+        }
+
+        .button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .status-panel {
+            margin-top: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            border-left: 4px solid #FFD700;
+        }
+
+        .status-label {
+            font-weight: bold;
+            color: #FFD700;
+        }
+
+        .status-value {
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 5px 10px;
+            border-radius: 5px;
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .data-panel h3 {
+            margin-bottom: 20px;
+            color: #FFD700;
+            font-size: 1.3em;
+            text-align: center;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .data-category {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 15px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .data-category h4 {
+            color: #87CEEB;
+            margin-bottom: 10px;
+            text-align: center;
+            font-size: 1.1em;
+        }
+
+        .system-status {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1.1em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .system-status.ready {
+            background: linear-gradient(145deg, #4CAF50, #45a049);
+        }
+
+        .system-status.error {
+            background: linear-gradient(145deg, #f44336, #da190b);
+        }
+
+        .system-status.initializing {
+            background: linear-gradient(145deg, #FF9800, #F57C00);
+            animation: pulse 1.5s infinite;
+        }
+
+        .mode-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .connection-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        .connection-indicator.connected {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .connection-indicator.disconnected {
+            background: #f44336;
+            color: white;
+        }
+
+        /* Robot arm connection status */
+        .robot-status-panel {
+            grid-column: 1 / -1;
+            margin-bottom: 20px;
+        }
+
+        .arm-status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .arm-status-card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .arm-status-card.connected {
+            border-color: #4CAF50;
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        .arm-status-card.disconnected {
+            border-color: #f44336;
+            background: rgba(244, 67, 54, 0.1);
+        }
+
+        .arm-status-icon {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .arm-status-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+            color: #FFD700;
+        }
+
+        .arm-status-description {
+            font-size: 0.9em;
+            opacity: 0.8;
+            margin-bottom: 10px;
+        }
+
+        .arm-functions {
+            font-size: 0.8em;
+            color: #87CEEB;
+            font-style: italic;
+        }
+
+        .warning-panel {
+            background: rgba(255, 152, 0, 0.15);
+            border: 2px solid #FF9800;
+            border-radius: 10px;
+            padding: 15px;
+            margin: 15px 0;
+            text-align: center;
+        }
+
+        .warning-panel h4 {
+            color: #FFB74D;
+            margin-bottom: 10px;
+        }
+
+        .warning-panel p {
+            margin: 5px 0;
+            font-size: 0.9em;
+        }
+
+        .feature-requirement {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 3px 8px;
+            border-radius: 12px;
+            margin: 2px;
+            font-size: 0.8em;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .feature-requirement.available {
+            background: rgba(76, 175, 80, 0.2);
+            border-color: #4CAF50;
+            color: #81C784;
+        }
+
+        .feature-requirement.unavailable {
+            background: rgba(244, 67, 54, 0.2);
+            border-color: #f44336;
+            color: #E57373;
+        }
+
+        /* Arduino specific styles */
+        .arduino-panel {
+            background: rgba(255, 152, 0, 0.1);
+            border: 2px solid #FF9800;
+        }
+
+        .brightness-control {
+            margin: 15px 0;
+        }
+
+        .brightness-level {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .level-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 2px solid #FF9800;
+            background: rgba(255, 152, 0, 0.2);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .level-btn.active {
+            background: #FF9800;
+            box-shadow: 0 0 15px rgba(255, 152, 0, 0.5);
+        }
+
+        .level-btn:hover {
+            background: #FFB74D;
+        }
+
+        .led-effects {
+            margin: 15px 0;
+        }
+
+        .effect-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .arduino-status-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        @media (max-width: 1400px) {
+            .container {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .arm-status-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        @media (max-width: 1000px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            
+            .video-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .arm-status-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2em;
+            }
+            
+            .button {
+                padding: 12px 20px;
+                font-size: 14px;
+            }
+            
+            .mode-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+
+            .effect-buttons {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div id="status-bar" class="status-bar status-disconnected">연결 중...</div>
-  <div id="notification" class="notification"></div>
-  
-  <div class="container">
+    <div class="connection-indicator" id="connectionStatus">Connecting...</div>
+    
     <div class="header">
-      <h1>🤖 로봇 핸드 컨트롤러</h1>
-      <div class="subtitle">AI 기반 로봇 제어 시스템</div>
+        <h1>🤖 Robot Arm Control System</h1>
+        <p>Hand Gesture Control with Dual Camera Vision & Arduino Integration</p>
     </div>
 
-    <!-- Camera Section -->
-    <div class="camera-grid">
-      <div class="camera-box">
-        <div class="camera-title">📹 Camera 1 (Control)</div>
-        <img src="/video_feed1" width="640" height="480" alt="Camera 1" />
-      </div>
-      <div class="camera-box">
-        <div class="camera-title">📹 Camera 2 (Depth)</div>
-        <img src="/video_feed2" width="640" height="480" alt="Camera 2" />
-      </div>
+    <div class="container">
+        <!-- System Status -->
+        <div class="system-status" id="systemStatus">
+            System Initializing...
+        </div>
+
+        <!-- Connection Status Panel -->
+        <div class="panel robot-status-panel">
+            <h3>🔗 System Connection Status</h3>
+            <div class="arm-status-grid">
+                <div class="arm-status-card" id="followerArmCard">
+                    <div class="arm-status-icon">🦾</div>
+                    <div class="arm-status-title">Follower Arm</div>
+                    <div class="arm-status-description">/dev/ttyACM0</div>
+                    <div class="arm-functions">Gesture Control, Data Logging</div>
+                    <div class="status-value" id="followerArmStatus">Checking...</div>
+                </div>
+                <div class="arm-status-card" id="leaderArmCard">
+                    <div class="arm-status-icon">🎯</div>
+                    <div class="arm-status-title">Leader Arm</div>
+                    <div class="arm-status-description">/dev/ttyACM1</div>
+                    <div class="arm-functions">Mode Control, Manual Commands</div>
+                    <div class="status-value" id="leaderArmStatus">Checking...</div>
+                </div>
+                <div class="arm-status-card" id="arduinoCard">
+                    <div class="arm-status-icon">💡</div>
+                    <div class="arm-status-title">Arduino Controller</div>
+                    <div class="arm-status-description">/dev/ttyACM2</div>
+                    <div class="arm-functions">LED Control, Buttons, Effects</div>
+                    <div class="status-value" id="arduinoStatus">Checking...</div>
+                </div>
+            </div>
+            <div id="connectionWarning" class="warning-panel" style="display: none;">
+                <h4>⚠️ Partial Connection Detected</h4>
+                <p>Some features may be limited based on connected devices:</p>
+                <div id="featureStatus" style="margin-top: 10px;"></div>
+            </div>
+        </div>
+
+        <!-- Video Feeds -->
+        <div class="video-section">
+            <div class="video-container">
+                <h3>📹 Camera 1 - Main View</h3>
+                <div class="status-indicator" id="cam1Status"></div>
+                <img src="/video_feed1" alt="Camera 1" class="video-frame" id="videoFeed1">
+            </div>
+            <div class="video-container">
+                <h3>📹 Camera 2 - Side View</h3>
+                <div class="status-indicator" id="cam2Status"></div>
+                <img src="/video_feed2" alt="Camera 2" class="video-frame" id="videoFeed2">
+            </div>
+        </div>
+
+        <!-- Robot Control Panel -->
+        <div class="panel control-panel">
+            <h3>🎮 Robot Control</h3>
+            
+            <div class="status-panel">
+                <div class="status-item">
+                    <span class="status-label">Control Status:</span>
+                    <span class="status-value" id="controlStatus">Inactive</span>
+                </div>
+            </div>
+
+            <button class="button" id="startControlBtn" onclick="startControl()">
+                ▶️ Start Control
+            </button>
+            <button class="button stop" id="stopControlBtn" onclick="stopControl()">
+                ⏹️ Stop Control
+            </button>
+
+            <button class="button" id="snapshotBtn" onclick="takeSnapshot()" style="background: linear-gradient(145deg, #9C27B0, #7B1FA2);">
+                📸 Take Snapshot
+            </button>
+            <div class="feature-requirement available" style="display: block; margin: 5px auto; width: fit-content;">
+                📊 Always Available
+            </div>
+
+            <h4 style="margin: 30px 0 15px 0; color: #87CEEB;">Robot Mode Selection</h4>
+            <div class="mode-buttons">
+                <button class="button mode" id="mode0Btn" onclick="setRobotMode(0)">Mode 0</button>
+                <button class="button mode" id="mode1Btn" onclick="setRobotMode(1)">Mode 1</button>
+            </div>
+            <div id="modeRequirement" class="feature-requirement unavailable" style="display: block; margin: 5px auto; width: fit-content;">
+                🎯 Requires Leader Arm or Arduino
+            </div>
+
+            <div class="status-item" style="margin-top: 20px;">
+                <span class="status-label">Current Mode:</span>
+                <span class="status-value" id="currentMode">-</span>
+            </div>
+
+            <div class="status-item">
+                <span class="status-label">Total Snapshots:</span>
+                <span class="status-value" id="totalSnapshots">-</span>
+            </div>
+
+            <button class="button mode" onclick="downloadCSV()" style="background: linear-gradient(145deg, #FF9800, #F57C00); margin-top: 15px;">
+                💾 Download CSV
+            </button>
+        </div>
+
+        <!-- Arduino Control Panel -->
+        <div class="panel arduino-panel">
+            <h3>💡 Arduino LED Control</h3>
+            
+            <div class="status-panel">
+                <div class="arduino-status-grid">
+                    <div class="status-item">
+                        <span class="status-label">Connection:</span>
+                        <span class="status-value" id="arduinoConnection">Unknown</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Brightness:</span>
+                        <span class="status-value" id="arduinoBrightness">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Robot Mode:</span>
+                        <span class="status-value" id="arduinoRobotMode">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Last Update:</span>
+                        <span class="status-value" id="arduinoLastUpdate">-</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="brightness-control">
+                <h4 style="color: #FFB74D; margin-bottom: 10px; text-align: center;">Brightness Control</h4>
+                <div class="brightness-level">
+                    <button class="level-btn" data-level="0" onclick="setArduinoBrightness(0)">0</button>
+                    <button class="level-btn" data-level="1" onclick="setArduinoBrightness(1)">1</button>
+                    <button class="level-btn" data-level="2" onclick="setArduinoBrightness(2)">2</button>
+                    <button class="level-btn" data-level="3" onclick="setArduinoBrightness(3)">3</button>
+                    <button class="level-btn" data-level="4" onclick="setArduinoBrightness(4)">4</button>
+                    <button class="level-btn" data-level="5" onclick="setArduinoBrightness(5)">5</button>
+                </div>
+            </div>
+
+            <div class="led-effects">
+                <h4 style="color: #FFB74D; margin-bottom: 10px; text-align: center;">LED Effects</h4>
+                <div class="effect-buttons">
+                    <button class="button led-effect" onclick="triggerLedEffect(0)">⭕ Off</button>
+                    <button class="button led-effect" onclick="triggerLedEffect(1)">⚡ Flash</button>
+                    <button class="button led-effect" onclick="triggerLedEffect(2)">🔵 Blue Fade</button>
+                    <button class="button led-effect" onclick="triggerLedEffect(3)">🟢 Green Fade</button>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="button arduino" onclick="resetArduino()">
+                    🔄 Reset Arduino
+                </button>
+            </div>
+
+            <div id="arduinoRequirement" class="feature-requirement unavailable" style="display: block; margin: 10px auto; width: fit-content;">
+                💡 Requires Arduino Connection
+            </div>
+        </div>
+
+        <!-- Data Panel -->
+        <div class="panel data-panel">
+            <h3>📊 Real-time Data</h3>
+            
+            <div class="data-grid">
+                <div class="data-category">
+                    <h4>👋 Hand Tracking</h4>
+                    <div class="status-item">
+                        <span class="status-label">Cam1 X:</span>
+                        <span class="status-value" id="cam1X">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Cam1 Y:</span>
+                        <span class="status-value" id="cam1Y">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Cam2 X:</span>
+                        <span class="status-value" id="cam2X">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Cam2 Y:</span>
+                        <span class="status-value" id="cam2Y">-</span>
+                    </div>
+                </div>
+
+                <div class="data-category">
+                    <h4>🦾 Joint Positions</h4>
+                    <div class="status-item">
+                        <span class="status-label">Joint 1:</span>
+                        <span class="status-value" id="joint1">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Joint 2:</span>
+                        <span class="status-value" id="joint2">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Joint 3:</span>
+                        <span class="status-value" id="joint3">-</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-label">Joint 4:</span>
+                        <span class="status-value" id="joint4">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <!-- Main Controls -->
-    <div class="grid grid-2">
-      <!-- Data Collection -->
-      <div class="card">
-        <h3 class="card-title">📊 데이터 수집</h3>
-        <div class="card-subtitle">현재 로봇 상태를 CSV 파일에 저장</div>
-        <div class="grid grid-4">
-          <button class="btn btn-green" onclick="takeSnapshot()">📸 저장</button>
-          <button class="btn btn-blue" onclick="getCsvInfo()">📋 정보</button>
-          <button class="btn btn-red" onclick="clearCsv()">🗑️ 초기화</button>
-        </div>
-        <div id="csv-info" class="csv-info">
-          <div><strong>파일:</strong> <span id="csv-path">-</span></div>
-          <div><strong>데이터:</strong> <span id="csv-rows">0</span>행</div>
-          <div><strong>크기:</strong> <span id="csv-size">0</span> bytes</div>
-        </div>
-      </div>
+    <script>
+        // Socket.IO connection
+        const socket = io();
+        
+        // Connection status tracking
+        let isConnected = false;
+        let systemReady = false;
+        let controlActive = false;
+        let connectedArms = [];
+        let arduinoConnected = false;
+        let arduinoStatus = {};
 
-      <!-- Hand Control -->
-      <div class="card">
-        <h3 class="card-title">🎯 손 추적 제어</h3>
-        <div class="card-subtitle">손 움직임으로 로봇 제어</div>
-        <button id="control-btn" class="btn btn-green" onclick="toggleControl()">제어 시작</button>
-      </div>
+        // UI Elements
+        const connectionStatus = document.getElementById('connectionStatus');
+        const systemStatus = document.getElementById('systemStatus');
+        const controlStatus = document.getElementById('controlStatus');
+        const startControlBtn = document.getElementById('startControlBtn');
+        const stopControlBtn = document.getElementById('stopControlBtn');
+        const snapshotBtn = document.getElementById('snapshotBtn');
+        const currentMode = document.getElementById('currentMode');
+        const totalSnapshots = document.getElementById('totalSnapshots');
+        
+        // Robot arm status elements
+        const followerArmCard = document.getElementById('followerArmCard');
+        const leaderArmCard = document.getElementById('leaderArmCard');
+        const arduinoCard = document.getElementById('arduinoCard');
+        const followerArmStatus = document.getElementById('followerArmStatus');
+        const leaderArmStatus = document.getElementById('leaderArmStatus');
+        const arduinoStatusElement = document.getElementById('arduinoStatus');
+        const connectionWarning = document.getElementById('connectionWarning');
+        const featureStatus = document.getElementById('featureStatus');
+        const modeRequirement = document.getElementById('modeRequirement');
+        const arduinoRequirement = document.getElementById('arduinoRequirement');
+        const mode0Btn = document.getElementById('mode0Btn');
+        const mode1Btn = document.getElementById('mode1Btn');
+        
+        // Arduino elements
+        const arduinoConnection = document.getElementById('arduinoConnection');
+        const arduinoBrightness = document.getElementById('arduinoBrightness');
+        const arduinoRobotMode = document.getElementById('arduinoRobotMode');
+        const arduinoLastUpdate = document.getElementById('arduinoLastUpdate');
+        
+        // Data elements
+        const dataElements = {
+            cam1X: document.getElementById('cam1X'),
+            cam1Y: document.getElementById('cam1Y'),
+            cam2X: document.getElementById('cam2X'),
+            cam2Y: document.getElementById('cam2Y'),
+            joint1: document.getElementById('joint1'),
+            joint2: document.getElementById('joint2'),
+            joint3: document.getElementById('joint3'),
+            joint4: document.getElementById('joint4')
+        };
 
-      <!-- Voice Control -->
-      <div class="card">
-        <h3 class="card-title">🎤 음성 제어</h3>
-        <div class="card-subtitle">음성 명령으로 로봇 제어</div>
-        <button id="voice-btn" class="btn btn-blue" onclick="toggleVoice()">음성 시작</button>
-        <div id="voice-log" class="voice-log">
-          <div class="voice-entry">음성 인식 로그가 여기에 표시됩니다.</div>
-        </div>
-        <div style="margin-top: 10px; font-size: 0.9em;">
-          <div><strong>웨이크워드:</strong> 하이봇, 아이봇</div>
-          <div><strong>명령어:</strong> 왼쪽, 오른쪽, 위, 아래, 종료</div>
-        </div>
-      </div>
+        // Socket event handlers
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            isConnected = true;
+            updateConnectionStatus();
+            updateCSVStats();
+            console.log('Connection established, waiting for status updates...');
+        });
 
-      <!-- Manual Control -->
-      <div class="card">
-        <h3 class="card-title">🕹️ 수동 제어</h3>
-        <div class="card-subtitle">로봇 모드 및 LED 제어</div>
-        <div class="grid grid-4">
-          <button class="btn btn-blue" onclick="setMode(0)">모드 0</button>
-          <button class="btn btn-purple" onclick="setMode(1)">모드 1</button>
-        </div>
-        <div class="grid grid-4" style="margin-top: 15px;">
-          <button class="btn btn-orange" onclick="setLED(0)">LED OFF</button>
-          <button class="btn btn-orange" onclick="setLED(1)">LED 1</button>
-          <button class="btn btn-orange" onclick="setLED(3)">LED 3</button>
-          <button class="btn btn-orange" onclick="setLED(5)">LED MAX</button>
-        </div>
-      </div>
-    </div>
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            isConnected = false;
+            systemReady = false;
+            controlActive = false;
+            connectedArms = [];
+            arduinoConnected = false;
+            arduinoStatus = {};
+            updateConnectionStatus();
+            updateSystemStatus({status: 'error', message: 'Connection lost'});
+            updateControlStatus({active: false});
+            updateRobotStatus({connected_arms: []});
+            updateArduinoStatus({});
+        });
 
-    <!-- Status Panel -->
-    <div class="status-grid">
-      <div class="status-item">
-        <span id="control-status"><span class="indicator off"></span>제어: 비활성</span>
-      </div>
-      <div class="status-item">
-        <span id="mode-status"><span class="indicator off"></span>모드: -</span>
-      </div>
-      <div class="status-item">
-        <span id="led-status"><span class="indicator off"></span>LED: -</span>
-      </div>
-      <div class="status-item">
-        <span id="voice-status"><span class="indicator off"></span>음성: 비활성</span>
-      </div>
-    </div>
+        socket.on('system_status', function(data) {
+            console.log('System status received:', data);
+            updateSystemStatus(data);
+        });
 
-    <!-- Data Table -->
-    <table class="data-table">
-      <tr>
-        <th>Cam1 X</th><th>Cam1 Y</th><th>Cam2 X</th><th>Cam2 Y</th>
-        <th>Joint 1</th><th>Joint 2</th><th>Joint 3</th><th>Joint 4</th>
-      </tr>
-      <tr id="data-row">
-        <td colspan="8">시스템 로딩 중...</td>
-      </tr>
-    </table>
-  </div>
+        socket.on('control_status', function(data) {
+            console.log('Control status received:', data);
+            updateControlStatus(data);
+        });
 
-  <script>
-    // Global state
-    let socket, isConnected = false, controlActive = false, voiceActive = false;
-    
-    // Utility functions
-    const $ = id => document.getElementById(id);
-    const updateIndicator = (id, status) => {
-      const el = $(id).querySelector('.indicator');
-      el.className = `indicator ${status}`;
-    };
-    
-    const showNotification = (msg, type = 'success') => {
-      const n = $('notification');
-      n.textContent = msg;
-      n.className = `notification ${type} show`;
-      setTimeout(() => n.classList.remove('show'), 3000);
-    };
-    
-    const updateConnection = connected => {
-      isConnected = connected;
-      const bar = $('status-bar');
-      bar.textContent = connected ? '🟢 연결됨' : '🔴 연결 끊김';
-      bar.className = `status-bar status-${connected ? 'connected' : 'disconnected'}`;
-      
-      // Enable/disable all buttons
-      document.querySelectorAll('.btn').forEach(btn => btn.disabled = !connected);
-    };
-    
-    const emit = (event, data, callback) => {
-      if (!isConnected) {
-        showNotification('서버와 연결되어 있지 않습니다.', 'error');
-        return;
-      }
-      socket.emit(event, data, callback);
-    };
-    
-    // Control functions
-    const toggleControl = () => {
-      emit(controlActive ? 'stop_control' : 'start_control', {}, res => {
-        if (res.success) {
-          showNotification(`제어가 ${controlActive ? '중지' : '시작'}되었습니다.`);
-        } else {
-          showNotification('제어 변경 실패', 'error');
+        socket.on('robot_status', function(data) {
+            console.log('Robot status received:', data);
+            updateRobotStatus(data);
+        });
+
+        socket.on('arduino_status', function(data) {
+            console.log('Arduino status received:', data);
+            updateArduinoStatus(data);
+        });
+
+        socket.on('arduino_led', function(data) {
+            console.log('Arduino LED update:', data);
+            if (data.brightness_level !== undefined) {
+                updateBrightnessDisplay(data.brightness_level);
+            }
+        });
+
+        socket.on('status_update', function(data) {
+            updateDataDisplay(data);
+            
+            if (Math.random() < 0.01) {
+                console.log('Status update:', data);
+            }
+        });
+
+        socket.on('robot_mode', function(data) {
+            console.log('Robot mode:', data);
+            currentMode.textContent = data.mode;
+        });
+
+        socket.on('snapshot_saved', function(data) {
+            console.log('Snapshot saved:', data);
+            if (data.success) {
+                totalSnapshots.textContent = data.total_snapshots;
+                
+                snapshotBtn.style.background = 'linear-gradient(145deg, #4CAF50, #45a049)';
+                snapshotBtn.textContent = '✅ Saved!';
+                setTimeout(() => {
+                    snapshotBtn.style.background = 'linear-gradient(145deg, #9C27B0, #7B1FA2)';
+                    snapshotBtn.textContent = '📸 Take Snapshot';
+                }, 1500);
+                
+                if (data.filename && data.connected_arms) {
+                    console.log(`Snapshot saved to: ${data.filename}, Total: ${data.total_snapshots}, Arms: ${data.connected_arms.join(', ')}`);
+                }
+            } else {
+                snapshotBtn.style.background = 'linear-gradient(145deg, #f44336, #da190b)';
+                snapshotBtn.textContent = '❌ Error';
+                setTimeout(() => {
+                    snapshotBtn.style.background = 'linear-gradient(145deg, #9C27B0, #7B1FA2)';
+                    snapshotBtn.textContent = '📸 Take Snapshot';
+                }, 1500);
+                
+                alert('Failed to save snapshot: ' + (data.error || 'Unknown error'));
+            }
+        });
+
+        // UI Update Functions
+        function updateConnectionStatus() {
+            if (isConnected) {
+                connectionStatus.textContent = '🟢 Connected';
+                connectionStatus.className = 'connection-indicator connected';
+            } else {
+                connectionStatus.textContent = '🔴 Disconnected';
+                connectionStatus.className = 'connection-indicator disconnected';
+            }
         }
-      });
-    };
-    
-    const toggleVoice = () => {
-      emit(voiceActive ? 'stop_voice_recognition' : 'start_voice_recognition', {}, res => {
-        if (res.success) {
-          showNotification(`음성 인식이 ${voiceActive ? '중지' : '시작'}되었습니다.`);
-        } else {
-          showNotification('음성 인식 변경 실패', 'error');
+
+        function updateSystemStatus(data) {
+            console.log('updateSystemStatus called with:', data);
+            const statusElement = systemStatus;
+            
+            switch(data.status) {
+                case 'ready':
+                    console.log('Setting system to ready state');
+                    statusElement.textContent = '✅ System Ready';
+                    statusElement.className = 'system-status ready';
+                    systemReady = true;
+                    updateCSVStats();
+                    break;
+                case 'error':
+                    console.log('Setting system to error state:', data.message);
+                    statusElement.textContent = `❌ Error: ${data.message || 'System Error'}`;
+                    statusElement.className = 'system-status error';
+                    systemReady = false;
+                    break;
+                case 'initializing':
+                    console.log('Setting system to initializing state');
+                    statusElement.textContent = '⏳ System Initializing...';
+                    statusElement.className = 'system-status initializing';
+                    systemReady = false;
+                    break;
+                default:
+                    console.log('Unknown system status:', data.status);
+                    statusElement.textContent = '⚠️ Unknown Status';
+                    statusElement.className = 'system-status error';
+                    systemReady = false;
+            }
+            
+            console.log('System ready state:', systemReady);
+            updateControlButtons();
         }
-      });
-    };
-    
-    const setMode = mode => {
-      emit('set_robot_mode', {mode}, res => {
-        if (res.success) {
-          showNotification(`모드 ${mode}으로 변경됨`);
-        } else {
-          showNotification('모드 변경 실패', 'error');
+
+        function updateRobotStatus(data) {
+            connectedArms = data.connected_arms || [];
+            
+            const followerConnected = connectedArms.includes('follower');
+            followerArmStatus.textContent = followerConnected ? '🟢 Connected' : '🔴 Disconnected';
+            followerArmCard.className = `arm-status-card ${followerConnected ? 'connected' : 'disconnected'}`;
+            
+            const leaderConnected = connectedArms.includes('leader');
+            leaderArmStatus.textContent = leaderConnected ? '🟢 Connected' : '🔴 Disconnected';
+            leaderArmCard.className = `arm-status-card ${leaderConnected ? 'connected' : 'disconnected'}`;
+            
+            const totalDevices = 3; // follower, leader, arduino
+            const connectedCount = connectedArms.length + (arduinoConnected ? 1 : 0);
+            
+            if (connectedCount > 0 && connectedCount < totalDevices) {
+                connectionWarning.style.display = 'block';
+                updateFeatureStatus(followerConnected, leaderConnected, arduinoConnected);
+            } else if (connectedCount === 0) {
+                connectionWarning.style.display = 'block';
+                featureStatus.innerHTML = '<span class="feature-requirement unavailable">❌ All features unavailable</span>';
+            } else {
+                connectionWarning.style.display = 'none';
+            }
+            
+            updateControlButtons();
         }
-      });
-    };
-    
-    const setLED = level => {
-      emit('send_serial_command', {command: `CMD:LED:${level}`}, res => {
-        if (res.success) {
-          showNotification(`LED 레벨 ${level}로 설정됨`);
-        } else {
-          showNotification('LED 설정 실패', 'error');
+
+        function updateArduinoStatus(data) {
+            arduinoStatus = data;
+            arduinoConnected = data.connected || false;
+            
+            // Update Arduino connection card
+            arduinoStatusElement.textContent = arduinoConnected ? '🟢 Connected' : '🔴 Disconnected';
+            arduinoCard.className = `arm-status-card ${arduinoConnected ? 'connected' : 'disconnected'}`;
+            
+            // Update Arduino panel
+            arduinoConnection.textContent = arduinoConnected ? 'Connected' : 'Disconnected';
+            arduinoBrightness.textContent = data.brightness_level !== undefined ? data.brightness_level : '-';
+            arduinoRobotMode.textContent = data.robot_mode !== undefined ? data.robot_mode : '-';
+            
+            if (data.last_status_update) {
+                const lastUpdate = new Date(data.last_status_update * 1000);
+                arduinoLastUpdate.textContent = lastUpdate.toLocaleTimeString();
+            } else {
+                arduinoLastUpdate.textContent = '-';
+            }
+            
+            // Update brightness display
+            if (data.brightness_level !== undefined) {
+                updateBrightnessDisplay(data.brightness_level);
+            }
+            
+            // Update requirement indicator
+            if (arduinoConnected) {
+                arduinoRequirement.className = 'feature-requirement available';
+                arduinoRequirement.textContent = '✅ Arduino Connected';
+            } else {
+                arduinoRequirement.className = 'feature-requirement unavailable';
+                arduinoRequirement.textContent = '❌ Requires Arduino Connection';
+            }
+            
+            updateControlButtons();
         }
-      });
-    };
-    
-    // CSV functions
-    const takeSnapshot = () => {
-      emit('take_snapshot', {}, res => {
-        if (res.success) {
-          showNotification('스냅샷 저장됨');
-          if ($('csv-info').style.display !== 'none') getCsvInfo();
-        } else {
-          showNotification('저장 실패', 'error');
+
+        function updateFeatureStatus(followerConnected, leaderConnected, arduinoConnected) {
+            let features = [];
+            
+            features.push(`<span class="feature-requirement ${followerConnected ? 'available' : 'unavailable'}">
+                ${followerConnected ? '✅' : '❌'} Gesture Control
+            </span>`);
+            
+            features.push(`<span class="feature-requirement ${leaderConnected ? 'available' : 'unavailable'}">
+                ${leaderConnected ? '✅' : '❌'} Robot Mode Control
+            </span>`);
+            
+            features.push(`<span class="feature-requirement ${arduinoConnected ? 'available' : 'unavailable'}">
+                ${arduinoConnected ? '✅' : '❌'} LED & Button Control
+            </span>`);
+            
+            features.push(`<span class="feature-requirement available">
+                ✅ Data Logging & Snapshots
+            </span>`);
+            
+            features.push(`<span class="feature-requirement available">
+                ✅ Camera Feeds
+            </span>`);
+            
+            featureStatus.innerHTML = features.join('');
+            
+            // Update mode requirement indicator
+            if (leaderConnected || arduinoConnected) {
+                modeRequirement.className = 'feature-requirement available';
+                modeRequirement.textContent = '✅ Control Available';
+            } else {
+                modeRequirement.className = 'feature-requirement unavailable';
+                modeRequirement.textContent = '❌ Requires Leader Arm or Arduino';
+            }
         }
-      });
-    };
-    
-    const getCsvInfo = () => {
-      emit('get_csv_info', {}, res => {
-        const info = $('csv-info');
-        if (res.success && res.exists) {
-          $('csv-path').textContent = res.file_path;
-          $('csv-rows').textContent = res.row_count;
-          $('csv-size').textContent = res.file_size;
-          info.style.display = 'block';
-          showNotification(`CSV: ${res.row_count}행 저장됨`);
-        } else {
-          info.style.display = 'none';
-          showNotification('CSV 파일 없음', 'warning');
+
+        function updateControlStatus(data) {
+            controlActive = data.active;
+            
+            if (controlActive) {
+                controlStatus.textContent = '🟢 Active';
+                controlStatus.style.color = '#4CAF50';
+            } else {
+                controlStatus.textContent = '🔴 Inactive';
+                controlStatus.style.color = '#f44336';
+            }
+            
+            updateControlButtons();
         }
-      });
-    };
-    
-    const clearCsv = () => {
-      if (!confirm('CSV 파일을 삭제하시겠습니까?')) return;
-      emit('clear_csv', {}, res => {
-        if (res.success) {
-          $('csv-info').style.display = 'none';
-          showNotification('CSV 삭제됨');
-        } else {
-          showNotification('삭제 실패', 'error');
+
+        function updateControlButtons() {
+            const canControl = isConnected && systemReady;
+            const followerConnected = connectedArms.includes('follower');
+            const leaderConnected = connectedArms.includes('leader');
+            const canSetMode = leaderConnected || arduinoConnected;
+            
+            console.log('updateControlButtons called:', {
+                isConnected: isConnected,
+                systemReady: systemReady,
+                canControl: canControl,
+                followerConnected: followerConnected,
+                leaderConnected: leaderConnected,
+                arduinoConnected: arduinoConnected,
+                connectedArms: connectedArms
+            });
+            
+            // Gesture control buttons
+            startControlBtn.disabled = !canControl || controlActive || !followerConnected;
+            stopControlBtn.disabled = !canControl || !controlActive;
+            
+            // Mode control buttons
+            mode0Btn.disabled = !canControl || !canSetMode;
+            mode1Btn.disabled = !canControl || !canSetMode;
+            
+            // Snapshot button - always available when system ready
+            snapshotBtn.disabled = !canControl;
+            
+            // Arduino control buttons
+            const levelBtns = document.querySelectorAll('.level-btn');
+            const effectBtns = document.querySelectorAll('.led-effect');
+            
+            levelBtns.forEach(btn => {
+                btn.disabled = !canControl || !arduinoConnected;
+            });
+            
+            effectBtns.forEach(btn => {
+                btn.disabled = !canControl || !arduinoConnected;
+            });
+            
+            // Update button text based on state
+            if (!canControl) {
+                startControlBtn.textContent = '⏳ System Not Ready';
+                stopControlBtn.textContent = '⏹️ Stop Control';
+                snapshotBtn.textContent = '📸 Take Snapshot';
+            } else if (!followerConnected) {
+                startControlBtn.textContent = '❌ Follower Arm Required';
+                stopControlBtn.textContent = '⏹️ Stop Control';
+                snapshotBtn.textContent = '📸 Take Snapshot';
+            } else if (controlActive) {
+                startControlBtn.textContent = '✅ Control Active';
+                stopControlBtn.textContent = '⏹️ Stop Control';
+                snapshotBtn.textContent = '📸 Take Snapshot';
+            } else {
+                startControlBtn.textContent = '▶️ Start Control';
+                stopControlBtn.textContent = '⏹️ Stop Control';
+                snapshotBtn.textContent = '📸 Take Snapshot';
+            }
+            
+            // Update mode button text
+            if (!canSetMode) {
+                mode0Btn.textContent = '❌ Mode 0';
+                mode1Btn.textContent = '❌ Mode 1';
+            } else {
+                mode0Btn.textContent = 'Mode 0';
+                mode1Btn.textContent = 'Mode 1';
+            }
+            
+            console.log('Button states updated - startControlBtn.disabled:', startControlBtn.disabled);
         }
-      });
-    };
-    
-    // Voice logging
-    const addVoiceLog = (prefix, text, type) => {
-      const log = $('voice-log');
-      const entry = document.createElement('div');
-      entry.className = `voice-entry voice-${type}`;
-      const time = new Date().toLocaleTimeString();
-      entry.innerHTML = `<span style="color: #666;">[${time}]</span> ${prefix}: ${text}`;
-      log.appendChild(entry);
-      log.scrollTop = log.scrollHeight;
-      
-      if (log.children.length > 30) log.removeChild(log.firstChild);
-    };
-    
-    // Status updates
-    const updateControlStatus = active => {
-      controlActive = active;
-      updateIndicator('control-status', active ? 'on' : 'off');
-      $('control-status').innerHTML = `<span class="indicator ${active ? 'on' : 'off'}"></span>제어: ${active ? '활성' : '비활성'}`;
-      const btn = $('control-btn');
-      btn.textContent = active ? '🛑 제어 중지' : '▶️ 제어 시작';
-      btn.className = `btn ${active ? 'btn-red' : 'btn-green'}`;
-    };
-    
-    const updateVoiceStatus = active => {
-      voiceActive = active;
-      updateIndicator('voice-status', active ? 'on pulse' : 'off');
-      $('voice-status').innerHTML = `<span class="indicator ${active ? 'on pulse' : 'off'}"></span>음성: ${active ? '활성' : '비활성'}`;
-      const btn = $('voice-btn');
-      btn.textContent = active ? '🛑 음성 중지' : '🎤 음성 시작';
-      btn.className = `btn ${active ? 'btn-red' : 'btn-blue'}`;
-    };
-    
-    const updateModeStatus = mode => {
-      updateIndicator('mode-status', 'on');
-      $('mode-status').innerHTML = `<span class="indicator on"></span>모드: ${mode}`;
-    };
-    
-    const updateLEDStatus = level => {
-      updateIndicator('led-status', 'on');
-      $('led-status').innerHTML = `<span class="indicator on"></span>LED: Level ${level}`;
-    };
-    
-    const updateDataTable = data => {
-      const format = v => v !== null ? v : '-';
-      $('data-row').innerHTML = `
-        <td>${format(data.camera1_tip_x)}</td><td>${format(data.camera1_tip_y)}</td>
-        <td>${format(data.camera2_tip_x)}</td><td>${format(data.camera2_tip_y)}</td>
-        <td>${format(data.follower_joint_1)}</td><td>${format(data.follower_joint_2)}</td>
-        <td>${format(data.follower_joint_3)}</td><td>${format(data.follower_joint_4)}</td>
-      `;
-    };
-    
-    // Voice recognition handlers
-    const handleVoiceRecognition = data => {
-      const icons = {
-        listening: '📝', wake_word: '✅', command: '🎯', 
-        executed: '💡', timeout: '⏰', error: '❌'
-      };
-      addVoiceLog(icons[data.type] || 'ℹ️', data.text, data.type);
-    };
-    
-    // Initialize
-    window.onload = () => {
-      socket = io();
-      
-      // Connection events
-      socket.on('connect', () => {
-        updateConnection(true);
-        showNotification('서버에 연결됨');
-      });
-      
-      socket.on('disconnect', () => {
-        updateConnection(false);
-        showNotification('연결 끊김', 'warning');
-        setTimeout(() => !isConnected && socket.connect(), 3000);
-      });
-      
-      // Status events
-      socket.on('status_update', updateDataTable);
-      socket.on('control_status', data => updateControlStatus(data.active));
-      socket.on('robot_mode', data => updateModeStatus(data.mode));
-      socket.on('led_brightness', data => updateLEDStatus(data.level));
-      
-      // Voice events
-      socket.on('voice_status', data => {
-        updateVoiceStatus(data.status === 'ready');
-        addVoiceLog('🔧', data.message, data.status === 'error' ? 'error' : 'executed');
-      });
-      socket.on('voice_recognition', handleVoiceRecognition);
-      socket.on('voice_command', data => {
-        addVoiceLog('💬', data.command, 'executed');
-        showNotification(`음성 명령: ${data.command}`);
-      });
-      
-      // System events
-      socket.on('system_status', data => {
-        if (data.status === 'error') {
-          showNotification(`시스템 오류: ${data.message}`, 'error');
-        } else if (data.status === 'ready') {
-          showNotification('시스템 준비됨');
+
+        function updateBrightnessDisplay(level) {
+            const levelBtns = document.querySelectorAll('.level-btn');
+            levelBtns.forEach(btn => {
+                const btnLevel = parseInt(btn.dataset.level);
+                if (btnLevel === level) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
         }
-      });
-      
-      updateConnection(false);
-    };
-  </script>
+
+        function updateDataDisplay(data) {
+            // Update hand tracking data
+            dataElements.cam1X.textContent = data.camera1_tip_x !== null ? data.camera1_tip_x : '-';
+            dataElements.cam1Y.textContent = data.camera1_tip_y !== null ? data.camera1_tip_y : '-';
+            dataElements.cam2X.textContent = data.camera2_tip_x !== null ? data.camera2_tip_x : '-';
+            dataElements.cam2Y.textContent = data.camera2_tip_y !== null ? data.camera2_tip_y : '-';
+            
+            // Update joint positions
+            dataElements.joint1.textContent = data.follower_joint_1 !== null ? data.follower_joint_1 : '-';
+            dataElements.joint2.textContent = data.follower_joint_2 !== null ? data.follower_joint_2 : '-';
+            dataElements.joint3.textContent = data.follower_joint_3 !== null ? data.follower_joint_3 : '-';
+            dataElements.joint4.textContent = data.follower_joint_4 !== null ? data.follower_joint_4 : '-';
+            
+            // Update camera status indicators
+            updateCameraStatus('cam1Status', data.camera1_tip_x !== null);
+            updateCameraStatus('cam2Status', data.camera2_tip_x !== null);
+        }
+
+        function updateCameraStatus(elementId, hasDetection) {
+            const indicator = document.getElementById(elementId);
+            if (hasDetection) {
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+            }
+        }
+
+        // Control Functions
+        function startControl() {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            if (!connectedArms.includes('follower')) {
+                alert('Follower arm (/dev/ttyACM0) is required for gesture control. Please check the connection.');
+                return;
+            }
+            
+            startControlBtn.disabled = true;
+            startControlBtn.textContent = '⏳ Starting...';
+            
+            socket.emit('start_control', {}, function(response) {
+                if (response && !response.success) {
+                    alert('Failed to start control: ' + (response.error || 'Unknown error'));
+                }
+                updateControlButtons();
+            });
+        }
+
+        function stopControl() {
+            stopControlBtn.disabled = true;
+            stopControlBtn.textContent = '⏳ Stopping...';
+            
+            socket.emit('stop_control', {}, function(response) {
+                if (response && !response.success) {
+                    alert('Failed to stop control: ' + (response.error || 'Unknown error'));
+                }
+                updateControlButtons();
+            });
+        }
+
+        function setRobotMode(mode) {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            const canSetMode = connectedArms.includes('leader') || arduinoConnected;
+            if (!canSetMode) {
+                alert('Leader arm (/dev/ttyACM1) or Arduino (/dev/ttyACM3) is required for mode control. Please check the connections.');
+                return;
+            }
+            
+            socket.emit('set_robot_mode', {mode: mode}, function(response) {
+                if (response) {
+                    if (response.success) {
+                        console.log(`Robot mode set to ${mode}`);
+                    } else {
+                        alert('Failed to set robot mode: ' + (response.error || 'Unknown error'));
+                    }
+                } else {
+                    alert('No response from server - check connection');
+                }
+            });
+        }
+
+        function takeSnapshot() {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            snapshotBtn.disabled = true;
+            snapshotBtn.textContent = '📸 Taking...';
+            
+            socket.emit('take_snapshot', {}, function(response) {
+                snapshotBtn.disabled = false;
+                if (response && !response.success) {
+                    alert('Failed to take snapshot: ' + (response.error || 'Unknown error'));
+                    snapshotBtn.textContent = '📸 Take Snapshot';
+                }
+            });
+        }
+
+        function downloadCSV() {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            window.open('/api/csv/download', '_blank');
+        }
+
+        // Arduino Control Functions
+        function setArduinoBrightness(level) {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            if (!arduinoConnected) {
+                alert('Arduino not connected. Please check the connection.');
+                return;
+            }
+            
+            socket.emit('arduino_set_brightness', {level: level}, function(response) {
+                if (response && !response.success) {
+                    alert('Failed to set brightness: ' + (response.error || 'Unknown error'));
+                } else {
+                    console.log(`Arduino brightness set to level ${level}`);
+                }
+            });
+        }
+
+        function triggerLedEffect(effect) {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            if (!arduinoConnected) {
+                alert('Arduino not connected. Please check the connection.');
+                return;
+            }
+            
+            socket.emit('arduino_led_effect', {effect: effect}, function(response) {
+                if (response && !response.success) {
+                    alert('Failed to trigger LED effect: ' + (response.error || 'Unknown error'));
+                } else {
+                    console.log(`Arduino LED effect ${effect} triggered`);
+                }
+            });
+        }
+
+        function resetArduino() {
+            if (!isConnected || !systemReady) {
+                alert('System not ready. Please wait for initialization to complete.');
+                return;
+            }
+            
+            if (!arduinoConnected) {
+                alert('Arduino not connected. Please check the connection.');
+                return;
+            }
+            
+            if (confirm('Are you sure you want to reset the Arduino to default settings?')) {
+                socket.emit('arduino_reset', {}, function(response) {
+                    if (response && !response.success) {
+                        alert('Failed to reset Arduino: ' + (response.error || 'Unknown error'));
+                    } else {
+                        console.log('Arduino reset successful');
+                    }
+                });
+            }
+        }
+
+        function updateCSVStats() {
+            if (!isConnected || !systemReady) {
+                totalSnapshots.textContent = '-';
+                return;
+            }
+            
+            socket.emit('get_csv_stats', {}, function(response) {
+                if (response && response.success) {
+                    totalSnapshots.textContent = response.stats.total_snapshots;
+                } else {
+                    totalSnapshots.textContent = '-';
+                }
+            });
+        }
+
+        // Error handling for video feeds
+        document.getElementById('videoFeed1').onerror = function() {
+            console.log('Video feed 1 error');
+        };
+
+        document.getElementById('videoFeed2').onerror = function() {
+            console.log('Video feed 2 error');
+        };
+
+        // Initialize UI
+        updateConnectionStatus();
+        updateControlButtons();
+        
+        // Request initial status when page loads
+        setTimeout(function() {
+            if (isConnected) {
+                console.log('Requesting initial status from server...');
+                socket.emit('get_status', {}, function(response) {
+                    console.log('Received initial status response:', response);
+                    if (response) {
+                        if (response.system_ready) {
+                            updateSystemStatus({status: 'ready', message: 'System Ready'});
+                        }
+                        if (response.connected_arms) {
+                            updateRobotStatus({connected_arms: response.connected_arms});
+                        }
+                        if (response.control_active !== undefined) {
+                            updateControlStatus({active: response.control_active});
+                        }
+                        if (response.arduino) {
+                            updateArduinoStatus(response.arduino);
+                        }
+                    }
+                });
+            }
+        }, 1000);
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey) {
+                switch(event.key) {
+                    case '1':
+                        event.preventDefault();
+                        startControl();
+                        break;
+                    case '2':
+                        event.preventDefault();
+                        stopControl();
+                        break;
+                    case '3':
+                        event.preventDefault();
+                        setRobotMode(0);
+                        break;
+                    case '4':
+                        event.preventDefault();
+                        setRobotMode(1);
+                        break;
+                    case 's':
+                        event.preventDefault();
+                        takeSnapshot();
+                        break;
+                    case 'd':
+                        event.preventDefault();
+                        downloadCSV();
+                        break;
+                    case 'r':
+                        event.preventDefault();
+                        resetArduino();
+                        break;
+                }
+            }
+            
+            // Number keys for brightness control
+            if (event.key >= '0' && event.key <= '5' && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+                const level = parseInt(event.key);
+                setArduinoBrightness(level);
+            }
+        });
+
+        // Debug functions
+        window.getRobotDebugInfo = function() {
+            return {
+                isConnected: isConnected,
+                systemReady: systemReady,
+                controlActive: controlActive,
+                connectedArms: connectedArms,
+                arduinoConnected: arduinoConnected,
+                arduinoStatus: arduinoStatus,
+                socketId: socket.id,
+                lastData: Object.keys(dataElements).reduce((acc, key) => {
+                    acc[key] = dataElements[key].textContent;
+                    return acc;
+                }, {})
+            };
+        };
+        
+        window.checkSystemStatus = function() {
+            console.log('Manual status check requested...');
+            socket.emit('get_status', {}, function(response) {
+                console.log('Manual status check response:', response);
+                if (response) {
+                    if (response.system_ready) {
+                        console.log('Server reports system is ready - updating UI');
+                        updateSystemStatus({status: 'ready', message: 'System Ready'});
+                        updateRobotStatus({connected_arms: response.connected_arms || []});
+                        updateControlStatus({active: response.control_active || false});
+                        updateArduinoStatus(response.arduino || {});
+                    } else {
+                        console.log('Server reports system is not ready');
+                        updateSystemStatus({status: 'initializing', message: 'System not ready'});
+                    }
+                } else {
+                    console.log('No response from server');
+                }
+            });
+        };
+        
+        console.log('Robot Control Interface with Arduino Integration loaded');
+        console.log('Keyboard shortcuts:');
+        console.log('  Ctrl+1 (Start), Ctrl+2 (Stop), Ctrl+3 (Mode 0), Ctrl+4 (Mode 1)');
+        console.log('  Ctrl+S (Snapshot), Ctrl+D (Download CSV), Ctrl+R (Reset Arduino)');
+        console.log('  0-5 (Arduino Brightness Control)');
+        console.log('Debug: Call getRobotDebugInfo() in console for system status');
+        console.log('Debug: Call checkSystemStatus() in console to manually check status');
+    </script>
 </body>
 </html>

@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Arm Control System with Voice</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        /* ---------- General Reset ---------- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        /* ---------- Header ---------- */
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        /* ---------- Grid Layout ---------- */
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        /* ---------- Panels ---------- */
+        .panel {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .voice-panel {
+            background: rgba(139, 69, 19, 0.1);
+            border: 2px solid #8B4513;
+        }
+        .voice-listening { background: rgba(0, 128, 0, 0.2); border-color: #00FF00; animation: pulse 1.5s infinite; }
+        .voice-command-mode { background: rgba(255, 165, 0, 0.2); border-color: #FFA500; animation: pulse 0.8s infinite; }
+
+        /* ---------- Video ---------- */
+        .video-section {
+            grid-column: 1 / -1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .video-container { text-align: center; position: relative; }
+        .video-container h3 { margin-bottom: 15px; font-size: 1.3em; color: #FFD700; }
+        .video-frame { width: 100%; max-width: 640px; height: auto; border-radius: 10px; border: 3px solid rgba(255, 255, 255, 0.3); transition: border-color 0.3s ease; }
+        .video-frame:hover { border-color: #FFD700; }
+        .status-indicator { position: absolute; top: 50px; right: 20px; width: 15px; height: 15px; border-radius: 50%; background: #ff4444; animation: pulse 2s infinite; }
+        .status-indicator.active { background: #44ff44; }
+
+        /* ---------- Buttons ---------- */
+        .button {
+            background: linear-gradient(145deg, #4CAF50, #45a049);
+            border: none;
+            color: white;
+            padding: 15px 30px;
+            margin: 10px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        .button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3); }
+        .button:active { transform: translateY(0); }
+        .button.stop { background: linear-gradient(145deg, #f44336, #da190b); }
+        .button.voice { background: linear-gradient(145deg, #8B4513, #654321); }
+        .button.voice.active { background: linear-gradient(145deg, #00FF00, #32CD32); }
+        .button:disabled { background: #666; cursor: not-allowed; transform: none; }
+
+        /* ---------- Status Panels ---------- */
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            border-left: 4px solid #FFD700;
+        }
+        .status-label { font-weight: bold; color: #FFD700; }
+        .status-value { font-family: 'Courier New', monospace; background: rgba(0, 0, 0, 0.2); padding: 5px 10px; border-radius: 5px; min-width: 80px; text-align: center; }
+
+        /* ---------- Voice Status ---------- */
+        .voice-status { margin: 15px 0; padding: 15px; border-radius: 10px; text-align: center; }
+        .voice-status.listening { background: rgba(0, 255, 0, 0.1); border: 2px solid #00FF00; }
+        .voice-status.command-mode { background: rgba(255, 165, 0, 0.1); border: 2px solid #FFA500; }
+        .voice-status.inactive { background: rgba(128, 128, 128, 0.1); border: 2px solid #808080; }
+
+        .microphone-icon { font-size: 2em; margin-bottom: 10px; transition: all 0.3s ease; }
+        .microphone-icon.listening { color: #00FF00; animation: pulse 1s infinite; }
+        .microphone-icon.command-mode { color: #FFA500; animation: pulse 0.5s infinite; }
+
+        /* ---------- Indicators ---------- */
+        .wake-word-indicator { position: fixed; top: 70px; right: 20px; padding: 10px 15px; border-radius: 20px; font-weight: bold; z-index: 1001; display: none; }
+        .wake-word-indicator.active { display: block; background: #00FF00; color: black; animation: pulse 1s infinite; }
+        .connection-indicator { position: fixed; top: 20px; right: 20px; padding: 10px 15px; border-radius: 20px; font-weight: bold; z-index: 1000; }
+        .connection-indicator.connected { background: #4CAF50; color: white; }
+        .connection-indicator.disconnected { background: #f44336; color: white; }
+
+        /* ---------- Media Queries ---------- */
+        @media (max-width: 1600px) { .container { grid-template-columns: repeat(3, 1fr); } }
+        @media (max-width: 1200px) { .container { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 800px)  { .container { grid-template-columns: 1fr; } .video-section { grid-template-columns: 1fr; } }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <!-- ---------- Indicators ---------- -->
+    <div class="connection-indicator" id="connectionStatus">Connecting...</div>
+    <div class="wake-word-indicator" id="wakeWordIndicator">🎤 Wake Word Detected!</div>
+
+    <!-- ---------- Header ---------- -->
+    <div class="header">
+        <h1>🤖 Robot Arm Control System</h1>
+        <p>Hand Gesture Control with Voice Commands &amp; Arduino Integration</p>
+    </div>
+
+    <!-- ---------- Main Container ---------- -->
+    <div class="container">
+        <!-- System Status (placeholder for future use) -->
+        <div class="system-status panel" id="systemStatus" style="grid-column: 1 / -1; text-align:center; font-weight:bold;">System Initializing...</div>
+
+        <!-- ---------- Video Feeds ---------- -->
+        <div class="video-section">
+            <div class="video-container">
+                <h3>📹 Camera 1 - Main View</h3>
+                <div class="status-indicator" id="cam1Status"></div>
+                <img src="/video_feed1" alt="Camera 1" class="video-frame" id="videoFeed1">
+            </div>
+            <div class="video-container">
+                <h3>📹 Camera 2 - Side View</h3>
+                <div class="status-indicator" id="cam2Status"></div>
+                <img src="/video_feed2" alt="Camera 2" class="video-frame" id="videoFeed2">
+            </div>
+        </div>
+
+        <!-- ---------- Voice Control Panel ---------- -->
+        <div class="panel voice-panel" id="voicePanel">
+            <h3>🎤 Voice Control</h3>
+
+            <div class="voice-status inactive" id="voiceStatusDisplay">
+                <div class="microphone-icon" id="microphoneIcon">🎤</div>
+                <div id="voiceStatusText">Voice Recognition Disabled</div>
+            </div>
+
+            <div class="status-item">
+                <span class="status-label">Voice Engine:</span>
+                <span class="status-value" id="voiceEngineStatus">Loading...</span>
+            </div>
+
+            <button class="button voice" id="voiceToggleBtn" onclick="toggleVoiceRecognition()">🎤 Start Voice</button>
+
+            <div class="voice-transcript" id="voiceTranscript">
+                음성 인식을 시작하면 여기에 인식된 내용이 표시됩니다.
+            </div>
+
+            <div class="status-item">
+                <span class="status-label">Last Command:</span>
+                <span class="status-value" id="lastVoiceCommand">-</span>
+            </div>
+
+            <!-- Voice command cheat‑sheet -->
+            <div class="voice-commands">
+                <h4 style="color:#DEB887; margin-bottom:10px;">사용 가능한 음성 명령어</h4>
+                <div class="command-list">
+                    <div class="command-category">
+                        <h5>웨이크워드</h5>
+                        <div class="command-item">
+                            <span class="command-trigger">"하이봇", "로봇아"</span>
+                            <span class="command-desc">음성 인식 활성화</span>
+                        </div>
+                    </div>
+                    <div class="command-category">
+                        <h5>로봇 제어</h5>
+                        <div class="command-item"><span class="command-trigger">"시작"</span><span class="command-desc">제스처 제어 시작</span></div>
+                        <div class="command-item"><span class="command-trigger">"정지"</span><span class="command-desc">제어 중지</span></div>
+                        <div class="command-item"><span class="command-trigger">"모드 0", "모드 1"</span><span class="command-desc">로봇 모드 변경</span></div>
+                    </div>
+                    <div class="command-category">
+                        <h5>데이터 &amp; LED</h5>
+                        <div class="command-item"><span class="command-trigger">"스냅샷"</span><span class="command-desc">데이터 저장</span></div>
+                        <div class="command-item"><span class="command-trigger">"밝게", "어둡게"</span><span class="command-desc">LED 밝기 조절</span></div>
+                        <div class="command-item"><span class="command-trigger">"리셋"</span><span class="command-desc">아두이노 초기화</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ---------- Robot Control Panel ---------- -->
+        <div class="panel">
+            <h3>🎮 Robot Control</h3>
+
+            <div class="status-item"><span class="status-label">Control Status:</span><span class="status-value" id="controlStatus">Inactive</span></div>
+            <button class="button" id="startControlBtn" onclick="socket.emit('start_control')">▶️ Start Control</button>
+            <button class="button stop" id="stopControlBtn" onclick="socket.emit('stop_control')">⏹️ Stop Control</button>
+            <button class="button" style="background:linear-gradient(145deg,#9C27B0,#7B1FA2);" onclick="socket.emit('take_snapshot')">📸 Take Snapshot</button>
+
+            <h4 style="margin:30px 0 15px 0; color:#87CEEB; text-align:center;">Robot Mode Selection</h4>
+            <div style="display:flex; justify-content:center; gap:10px;">
+                <button class="button" style="background:linear-gradient(145deg,#2196F3,#1976D2); padding:10px 20px; font-size:14px;" onclick="socket.emit('set_robot_mode',{mode:0})">Mode 0</button>
+                <button class="button" style="background:linear-gradient(145deg,#2196F3,#1976D2); padding:10px 20px; font-size:14px;" onclick="socket.emit('set_robot_mode',{mode:1})">Mode 1</button>
+            </div>
+
+            <div class="status-item" style="margin-top:20px;"><span class="status-label">Current Mode:</span><span class="status-value" id="currentMode">-</span></div>
+            <div class="status-item"><span class="status-label">Total Snapshots:</span><span class="status-value" id="totalSnapshots">-</span></div>
+            <button class="button" onclick="window.open('/api/csv/download','_blank')" style="background:linear-gradient(145deg,#FF9800,#F57C00); margin-top:15px;">💾 Download CSV</button>
+        </div>
+
+        <!-- ---------- Arduino Panel ---------- -->
+        <div class="panel" style="background:rgba(255,152,0,0.1); border:2px solid #FF9800;">
+            <h3>💡 Arduino LED Control</h3>
+            <div class="status-item"><span class="status-label">Connection:</span><span class="status-value" id="arduinoConnection">Unknown</span></div>
+            <div class="status-item"><span class="status-label">Brightness:</span><span class="status-value" id="arduinoBrightness">-</span></div>
+            <h4 style="color:#FFB74D; margin:15px 0 10px; text-align:center;">Brightness Control</h4>
+            <div style="display:flex; justify-content:center; gap:10px;">
+                <!-- Brightness buttons -->
+                <script>for(let i=0;i<=5;i++){document.write(`<button class='level-btn' style='width:40px; height:40px; border-radius:50%; border:2px solid #FF9800; background:rgba(255,152,0,0.2); color:white; font-weight:bold; cursor:pointer;' onclick='socket.emit("arduino_set_brightness",{level:${i}})'>${i}</button>`)};</script>
+            </div>
+        </div>
+
+        <!-- ---------- Data Panel ---------- -->
+        <div class="panel">
+            <h3>📊 Real-time Data</h3>
+            <div style="display:grid; grid-template-columns:1fr; gap:15px;">
+                <div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:10px;">
+                    <h4 style="color:#87CEEB; margin-bottom:10px; text-align:center;">👋 Hand Tracking</h4>
+                    <div class="status-item"><span class="status-label">Cam1 X:</span><span class="status-value" id="cam1X">-</span></div>
+                    <div class="status-item"><span class="status-label">Cam1 Y:</span><span class="status-value" id="cam1Y">-</span></div>
+                    <div class="status-item"><span class="status-label">Cam2 X:</span><span class="status-value" id="cam2X">-</span></div>
+                    <div class="status-item"><span class="status-label">Cam2 Y:</span><span class="status-value" id="cam2Y">-</span></div>
+                </div>
+                <div style="background:rgba(255,255,255,0.05); padding:15px; border-radius:10px;">
+                    <h4 style="color:#87CEEB; margin-bottom:10px; text-align:center;">🦾 Joint Positions</h4>
+                    <div class="status-item"><span class="status-label">Joint 1:</span><span class="status-value" id="joint1">-</span></div>
+                    <div class="status-item"><span class="status-label">Joint 2:</span><span class="status-value" id="joint2">-</span></div>
+                    <div class="status-item"><span class="status-label">Joint 3:</span><span class="status-value" id="joint3">-</span></div>
+                    <div class="status-item"><span class="status-label">Joint 4:</span><span class="status-value" id="joint4">-</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ---------- Client‑side Script ---------- -->
+    <script>
+        const socket = io();
+
+        /* ---------- Global State ---------- */
+        let isConnected = false;
+        let voiceEnabled = false;
+        let voiceListening = false;
+        let voiceCommandMode = false;
+
+        /* ---------- Cached Elements ---------- */
+        const connectionStatus = document.getElementById('connectionStatus');
+        const wakeWordIndicator = document.getElementById('wakeWordIndicator');
+        const voicePanel = document.getElementById('voicePanel');
+        const voiceStatusDisplay = document.getElementById('voiceStatusDisplay');
+        const voiceStatusText = document.getElementById('voiceStatusText');
+        const microphoneIcon = document.getElementById('microphoneIcon');
+        const voiceEngineStatus = document.getElementById('voiceEngineStatus');
+        const voiceToggleBtn = document.getElementById('voiceToggleBtn');
+        const voiceTranscript = document.getElementById('voiceTranscript');
+        const lastVoiceCommand = document.getElementById('lastVoiceCommand');
+
+        /* ---------- Utility: UI Updates ---------- */
+        function updateConnectionStatus() {
+            if (isConnected) {
+                connectionStatus.textContent = '🟢 Connected';
+                connectionStatus.className = 'connection-indicator connected';
+            } else {
+                connectionStatus.textContent = '🔴 Disconnected';
+                connectionStatus.className = 'connection-indicator disconnected';
+            }
+        }
+
+        function updateVoiceStatus() {
+            // Base panel classes
+            voicePanel.className = 'panel voice-panel';
+            voiceStatusDisplay.className = 'voice-status';
+            microphoneIcon.className = 'microphone-icon';
+
+            if (!voiceEnabled) {
+                voiceStatusDisplay.classList.add('inactive');
+                voiceStatusText.textContent = 'Voice Recognition Disabled';
+                voiceToggleBtn.textContent = '🎤 Start Voice';
+                voiceToggleBtn.className = 'button voice';
+            } else if (voiceCommandMode) {
+                voicePanel.classList.add('voice-command-mode');
+                voiceStatusDisplay.classList.add('command-mode');
+                microphoneIcon.classList.add('command-mode');
+                voiceStatusText.textContent = '🎙️ Listening for Command...';
+                voiceToggleBtn.textContent = '🔇 Stop Voice';
+                voiceToggleBtn.className = 'button voice active';
+            } else if (voiceListening) {
+                voicePanel.classList.add('voice-listening');
+                voiceStatusDisplay.classList.add('listening');
+                microphoneIcon.classList.add('listening');
+                voiceStatusText.textContent = '👂 Listening for Wake Word...';
+                voiceToggleBtn.textContent = '🔇 Stop Voice';
+                voiceToggleBtn.className = 'button voice active';
+            } else {
+                voiceStatusDisplay.classList.add('inactive');
+                voiceStatusText.textContent = 'Voice Recognition Ready';
+                voiceToggleBtn.textContent = '🔇 Stop Voice'; // Idle but enabled
+                voiceToggleBtn.className = 'button voice active';
+            }
+        }
+
+        function showWakeWordIndicator() {
+            wakeWordIndicator.classList.add('active');
+            setTimeout(() => wakeWordIndicator.classList.remove('active'), 3000);
+        }
+
+        /* ---------- Socket Event Listeners ---------- */
+        socket.on('connect', () => {
+            isConnected = true;
+            updateConnectionStatus();
+        });
+
+        socket.on('disconnect', () => {
+            isConnected = false;
+            voiceEnabled = false;
+            voiceListening = false;
+            voiceCommandMode = false;
+            updateConnectionStatus();
+            updateVoiceStatus();
+        });
+
+        // Initial status payload
+        socket.on('voice_status', (data) => {
+            voiceEnabled    = data.enabled || false;
+            voiceListening  = data.listening || false;
+            voiceEngineStatus.textContent = voiceEnabled ? 'Available' : 'Unavailable';
+            updateVoiceStatus();
+        });
+
+        // Dynamic status updates (start / stop)
+        socket.on('voice_status_update', (data) => {
+            if (typeof data.listening === 'boolean') voiceListening = data.listening;
+            if (data.message) voiceTranscript.textContent = data.message;
+            updateVoiceStatus();
+        });
+
+        socket.on('voice_wake_word', (data) => {
+            showWakeWordIndicator();
+            voiceTranscript.textContent = `🎤 Wake word: "${data.transcript}"`;
+        });
+
+        socket.on('voice_transcript', (data) => {
+            voiceTranscript.textContent = data.text;
+        });
+
+        socket.on('voice_command_mode', (data) => {
+            voiceCommandMode = !!data.active;
+            updateVoiceStatus();
+        });
+
+        socket.on('voice_command_transcript', (data) => {
+            voiceTranscript.textContent = `🎧 Heard: "${data.text}"`;
+        });
+
+        socket.on('voice_command_executed', (data) => {
+            if (data.success) {
+                lastVoiceCommand.textContent = data.command;
+                voiceTranscript.textContent = `✅ Command "${data.command}" executed (${data.transcript})`;
+            } else {
+                voiceTranscript.textContent = `❌ Failed to execute "${data.command}"`;
+            }
+        });
+
+        socket.on('voice_timeout', () => {
+            voiceTranscript.textContent = '⏱️ Command timeout - please try again';
+        });
+
+        socket.on('voice_direction_command', (data) => {
+            voiceTranscript.textContent = `🧭 Direction: ${data.direction}`;
+        });
+
+        socket.on('voice_shutdown_request', (data) => {
+            if (confirm('Voice command requested system shutdown. Continue?')) {
+                console.log('Shutdown confirmed via voice');
+            }
+        });
+
+        /* ---------- Toggle Voice Recognition ---------- */
+        function toggleVoiceRecognition() {
+            if (!isConnected) { alert('Not connected to server'); return; }
+
+            voiceToggleBtn.disabled = true;
+            voiceToggleBtn.textContent = '⏳ Processing...';
+
+            if (!voiceEnabled) {
+                // Start voice recognition
+                socket.emit('voice_start', {}, (response) => {
+                    voiceToggleBtn.disabled = false;
+                    if (response && response.success) {
+                        voiceEnabled = true;
+                        voiceListening = true; // system starts listening for wake word
+                        voiceTranscript.textContent = '🎤 Voice recognition started. Say "하이봇"...';
+                    } else {
+                        alert('Failed to start voice recognition: ' + (response.error || 'Unknown error'));
+                    }
+                    updateVoiceStatus();
+                });
+            } else {
+                // Stop voice recognition
+                socket.emit('voice_stop', {}, (response) => {
+                    voiceToggleBtn.disabled = false;
+                    if (response && response.success) {
+                        voiceEnabled = false;
+                        voiceListening = false;
+                        voiceCommandMode = false;
+                        voiceTranscript.textContent = 'Voice recognition stopped.';
+                    } else {
+                        alert('Failed to stop voice recognition: ' + (response.error || 'Unknown error'));
+                    }
+                    updateVoiceStatus();
+                });
+            }
+        }
+
+        /* ---------- Initial Fetch ---------- */
+        // Give the server a second to settle then request status via REST
+        setTimeout(() => {
+            if (isConnected) {
+                fetch('/api/voice/status')
+                    .then(r => r.json())
+                    .then(({ success, status }) => {
+                        if (success) {
+                            voiceEnabled   = status.enabled;
+                            voiceListening = status.listening;
+                            voiceEngineStatus.textContent = voiceEnabled ? 'Available' : 'Unavailable';
+                            updateVoiceStatus();
+                        }
+                    })
+                    .catch(err => console.error('Failed to fetch voice status', err));
+            }
+        }, 1000);
+
+        /* ---------- Keyboard Shortcuts ---------- */
+        document.addEventListener('keydown', (e) => {
+            if (!e.ctrlKey) return;
+            switch (e.key.toLowerCase()) {
+                case 'v': e.preventDefault(); toggleVoiceRecognition(); break;
+                case '1': e.preventDefault(); socket.emit('start_control'); break;
+                case '2': e.preventDefault(); socket.emit('stop_control'); break;
+                case 's': e.preventDefault(); socket.emit('take_snapshot'); break;
+            }
+        });
+
+        /* ---------- Initial UI State ---------- */
+        updateConnectionStatus();
+        updateVoiceStatus();
+        console.log('Voice‑integrated interface loaded');
+    </script>
+</body>
+</html>
